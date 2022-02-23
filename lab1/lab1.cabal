@@ -29,7 +29,7 @@ library
 
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:
-    build-depends:    base ^>=4.14.3.0
+    build-depends:    base >=4.14.3.0
                     , fused-effects
                     , time
                     , fused-effects-process
@@ -48,7 +48,7 @@ executable lab1
     -- LANGUAGE extensions used by modules in this package.
     -- other-extensions:
     build-depends:
-        base ^>=4.14.3.0,
+        base >=4.14.3.0,
         lab1
 
     hs-source-dirs:   app
