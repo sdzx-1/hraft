@@ -1,0 +1,20 @@
+packages: .
+
+source-repository-package
+  type: git
+  location: https://github.com/EMQ-YangM/io-sim.git
+  tag:  2a71222914ba1b0e95a266d9781d3a2031bcbd76
+  subdir:
+    io-classes
+    io-sim
+    strict-stm
+
+source-repository-package
+  type: git
+  location: https://github.com/input-output-hk/contra-tracer.git
+  tag: 0c9ff652d426bc687e7efb3dec1d1d1e68f9d2d8
+
+source-repository-package
+  type: git
+  location: https://github.com/EMQ-YangM/fused-effects.git
+  tag: bfe7b76740192726bf87a168e6333057290fcf86
