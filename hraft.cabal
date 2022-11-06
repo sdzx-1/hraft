@@ -99,6 +99,7 @@ library
     -- Base language which the package is written in.
     default-language: Haskell2010
     -- ghc-options: -O2 -ddump-to-file -ddump-simpl
+    -- ghc-options: -O2 -fspecialise-aggressively -fexpose-all-unfoldings
 
 executable hraft
     -- Import common warning flags.
@@ -169,3 +170,34 @@ test-suite hraft-test
         random-shuffle,
         fused-effects,
         fused-effects-random
+
+benchmark benchmark
+  type:           exitcode-stdio-1.0
+  hs-source-dirs: benchmark
+  main-is:        Bench.hs
+--   other-modules:
+  default-language: Haskell2010
+  build-depends:
+    , base
+    , fused-effects
+    , tasty-bench
+    , transformers
+    , hraft
+    , io-sim
+    , io-classes
+    , time
+    , fused-effects-random
+    , cborg
+    , bytestring
+    , serialise
+    , time
+    , random
+    , containers
+    , deepseq
+    , MonadRandom
+    , random-shuffle
+
+  ghc-options:
+     "-with-rtsopts=-A32m"
+
+    ---O3 -fspecialise-aggressively -fexpose-all-unfoldings

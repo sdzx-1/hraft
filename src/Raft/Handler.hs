@@ -30,6 +30,7 @@ import Control.Monad
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadTime
 import Control.Monad.Class.MonadTimer
+import Control.Monad.IOSim (IOSim)
 import Control.Monad.Random (StdGen)
 import qualified Data.Map as Map
 import Data.Maybe
@@ -579,3 +580,18 @@ voteAction
                   timeTracerWith (VotedForNode candidateId currentTerm)
                   send' (MsgRequestVoteResult (RequestVoteResult currentTerm True))
                 else send' (MsgRequestVoteResult (RequestVoteResult currentTerm False))
+
+-- type S s n = RandomC StdGen (Labelled HEnv (ReaderC (HEnv s n)) (Labelled HState (StateC (HState s n)) (LabelledLift Lift (Lift n) (LiftC n)))) ()
+-- 
+-- {-# SPECIALIZE follower :: S s IO #-}
+-- {-# SPECIALIZE follower :: S s (IOSim n) #-}
+-- {-# SPECIALIZE candidate :: S s IO #-}
+-- {-# SPECIALIZE candidate :: S s (IOSim n) #-}
+-- {-# SPECIALIZE leader :: S s IO #-}
+-- {-# SPECIALIZE leader :: S s (IOSim n) #-}
+-- {-# SPECIALIZE appendAction :: PeerNodeId -> AppendEntries s -> S s IO #-}
+-- {-# SPECIALIZE appendAction :: PeerNodeId -> AppendEntries s -> S s (IOSim n) #-}
+-- {-# SPECIALIZE voteAction :: PeerNodeId -> RequestVote -> S s IO #-}
+-- {-# SPECIALIZE voteAction :: PeerNodeId -> RequestVote -> S s (IOSim n) #-}
+-- {-# SPECIALIZE runFollow :: HState s IO -> HEnv s IO -> StdGen -> IO (HState s IO, (StdGen, ())) #-}
+-- {-# SPECIALIZE runFollow :: HState s (IOSim n) -> HEnv s (IOSim n) -> StdGen -> IOSim n (HState s (IOSim n), (StdGen, ())) #-}

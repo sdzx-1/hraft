@@ -173,7 +173,6 @@ data HandleTracer' s
   | FollowerRecvMsg (PeerNodeId, Msg s)
   | FollowerCheckPrevLog Bool
   | FollowerUpdateCommitIndex Index Index Index
-  -- | FollowerAllLogs [TermWarpper s]
   | CandidateNewElectionStart Term
   | CandidateSetNewElectionSzie DiffTime
   | CandidateSendVotoForMsgToAll [PeerNodeId]

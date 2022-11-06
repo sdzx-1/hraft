@@ -45,6 +45,7 @@ timeTracerWith a = do
   HEnv {tracer} <- R.ask @HEnv
   ct <- lift getCurrentTime
   lift $ traceWith tracer (TimeWrapper ct a)
+{-# INLINE timeTracerWith #-}
 
 waitTimeout :: (MonadTimer n, MonadSTM n) => Timeout n -> STM n ()
 waitTimeout timeout' = do
@@ -52,6 +53,7 @@ waitTimeout timeout' = do
   case tv of
     TimeoutFired -> pure ()
     _ -> retry
+{-# INLINE waitTimeout #-}
 
 updateTimeout' ::
   ( MonadTimer n,
@@ -62,6 +64,7 @@ updateTimeout' ::
 updateTimeout' = do
   HState {electionSize, electionTimeout} <- S.get @HState
   lift $ updateTimeout electionTimeout electionSize
+{-# INLINE updateTimeout' #-}
 
 newTimeout' ::
   ( MonadTimer n,
@@ -73,6 +76,7 @@ newTimeout' = do
   HState {electionSize} <- S.get @HState
   to <- lift $ newTimeout electionSize
   S.put @HState (HState {electionSize, electionTimeout = to})
+{-# INLINE newTimeout' #-}
 
 randomRDiffTime :: Has Random sig m => (DiffTime, DiffTime) -> m DiffTime
 randomRDiffTime (el, et) = picosecondsToDiffTime <$> uniformR (a, b)
@@ -81,6 +85,7 @@ randomRDiffTime (el, et) = picosecondsToDiffTime <$> uniformR (a, b)
       ( diffTimeToPicoseconds el,
         diffTimeToPicoseconds et
       )
+{-# INLINE randomRDiffTime #-}
 
 getPeerSendFun ::
   ( MonadTimer n,
@@ -93,3 +98,4 @@ getPeerSendFun peerNodeId = do
   HEnv {peerInfos} <- R.ask @HEnv
   let send' = peerSendFun $ fromJust $ Map.lookup peerNodeId peerInfos
   pure (lift . send')
+{-# INLINE getPeerSendFun #-}

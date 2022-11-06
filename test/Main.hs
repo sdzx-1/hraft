@@ -9,7 +9,6 @@ import Test.Tasty.QuickCheck
 
 main :: IO ()
 main = do
-  -- mapM_ print (runCreateAll (-96))
   defaultMain tests
 
 tests :: TestTree
