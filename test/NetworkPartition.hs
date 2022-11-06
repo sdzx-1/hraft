@@ -19,7 +19,8 @@ import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadTime
 import Control.Monad.Class.MonadTimer
 import Control.Monad.IOSim (IOSim, runSimTrace, selectTraceEventsDynamic, traceM)
-import Control.Monad.Random (forever, mkStdGen, runRand, void)
+import Control.Monad.Random (forever, mkStdGen, randomIO, replicateM, runRand, void)
+import Control.Parallel.Strategies (parList, rdeepseq, using, parListN)
 import Control.Tracer
 import qualified Data.ByteString.Lazy as LBS
 import Data.List (delete, sort)
@@ -200,3 +201,9 @@ runCreateAll i =
       runLabelledLift
         . runRandom (mkStdGen i)
         $ createAll
+
+moreTest :: IO ()
+moreTest = do
+  is <- replicateM 1000 $ randomIO @Int
+  let res = filter (== False) (map runCreateAll is `using` parList rdeepseq)
+  writeFile "log" (unlines $ zipWith (curry show) [1 ..] res)
