@@ -132,14 +132,16 @@ data NTracer a
 
 instance Show NetworkChange where
   show (NetworkChange ct (a, b) dt c) =
-    "\n"
-      ++ unlines (map show c)
-      ++ "\n---"
+    "====================================================\n"
+      ++ unlines (map ( \v -> "|| " ++ show v) c)
+      ++ "== "
       ++ s'
       ++ " NECONFIG_CHNAGE "
       ++ show (a, b)
       ++ " "
       ++ show dt
+      ++ 
+    "\n"
     where
       s = formatTime defaultTimeLocale "%S%Q" ct
       len = length s

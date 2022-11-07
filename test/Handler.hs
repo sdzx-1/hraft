@@ -320,8 +320,14 @@ prop_election_success env = prop res
     prop [CandidateElectionSuccess _ t] = t > 0
     prop (CandidateElectionSuccess _ t : xs@(CandidateElectionSuccess _ t1 : _)) = t < t1 && prop xs
 
+selectN :: NTracer s -> Bool
+-- selectN (N3 _) = True
+selectN (N4 _) = True
+selectN (N2 (IdWrapper _ (TimeWrapper _ h@(CandidateElectionSuccess _ _)))) = True
+selectN _ = False
+
 generateLogFile :: IO ()
 generateLogFile = do
   env <- generate (arbitrary :: Gen Env)
-  let res = unlines $ map show $ runCreateAll env
+  let res = unlines $ map show $ filter selectN $ runCreateAll env
   writeFile "log" res
