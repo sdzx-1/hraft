@@ -16,5 +16,6 @@ tests =
   testGroup
     "Test Group"
     [ testProperty "verify store log consistency" prop_store_log,
-      testProperty "verify election success term inc" prop_election_success
+      testProperty "verify election success term inc" prop_election_success,
+      testProperty "commit log never change" prop_commit_log_never_change
     ]

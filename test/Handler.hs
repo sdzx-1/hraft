@@ -331,3 +331,24 @@ generateLogFile = do
   env <- generate (arbitrary :: Gen Env)
   let res = unlines $ map show $ filter selectN $ runCreateAll env
   writeFile "log" res
+
+seletE :: NTracer s -> [(NodeId, Index, Index, [TermWarpper Int])]
+seletE (N3 v) = v
+seletE _ = []
+
+prop_commit_log_never_change :: Env -> Bool
+prop_commit_log_never_change env@Env {nodeIds} = all (cs . fun res) nodeIds
+  where
+    res = concatMap seletE $ runCreateAll env
+
+    fun :: [(NodeId, Index, Index, [TermWarpper Int])] -> NodeId -> [[TermWarpper Int]]
+    fun xs nodeId =
+      map (\(_, i, _, d) -> take i d) $
+        filter (\(a, _, _, _) -> a == nodeId) xs
+
+    compareLog :: [TermWarpper Int] -> [TermWarpper Int] -> Bool
+    compareLog [] _ = True
+    compareLog (x : xs) (y : ys) = (x == y) && compareLog xs ys
+
+    cs :: [[TermWarpper Int]] -> Bool
+    cs xs = and $ zipWith compareLog xs (tail xs)

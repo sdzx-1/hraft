@@ -39,7 +39,7 @@ type Id = Int
 
 type Index = Int
 
-data TermWarpper log = TermWarpper Term log deriving (Eq, Generic, Serialise, NFData)
+data TermWarpper log = TermWarpper Term log deriving (Eq, Ord, Generic, Serialise, NFData)
 
 instance Show log => Show (TermWarpper log) where
   show (TermWarpper t log') = show t ++ "-" ++ show log'
