@@ -28,7 +28,7 @@ data Persistent log m = Persistent
 instance M.Def a => M.Def (TermWarpper a) where
   def = TermWarpper (-1) M.def
 
-getPart :: ([Int], [Int]) -> [(Int, Int)]
+getPart :: ([a], [a]) -> [(a, a)]
 getPart (xs, ys) = [(x, y) | x <- xs, y <- ys]
 
 createPersistentFun ::
@@ -108,22 +108,12 @@ data IdWrapper a
 instance Show a => Show (IdWrapper a) where
   show (IdWrapper nid a) = show nid ++ ": " ++ show a
 
-ft' :: [(Int, Int)] -> [Int] -> [(Int, Int)]
+ft' :: [(a, a)] -> [a] -> [(a, a)]
 ft' rs [] = rs
 ft' rs (a : xs) = ft' (rs ++ [(a, b) | b <- xs]) xs
 
-ft :: [Int] -> [(Int, Int)]
+ft :: [a] -> [(a, a)]
 ft = ft' []
-
-selectN3 :: NTracer s -> Bool
-selectN3 (N3 _) = True
-selectN3 _ = False
-
-ntId :: NTracer a -> Int -> Bool
-ntId (N2 (IdWrapper i _)) j = i == j
-ntId (N3 _) _ = True
-ntId (N4 _) _ = True
-ntId _ _ = False
 
 data NetworkChange
   = NetworkChange

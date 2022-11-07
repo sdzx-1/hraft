@@ -3,7 +3,7 @@
 
 module Main (main) where
 
-import NetworkPartition
+import Handler
 import Test.Tasty
 import Test.Tasty.QuickCheck
 
@@ -15,5 +15,6 @@ tests :: TestTree
 tests =
   testGroup
     "Test Group"
-    [ testProperty "verify network" runCreateAll
+    [ testProperty "verify store log consistency" prop_store_log,
+      testProperty "verify election success term inc" prop_election_success
     ]

@@ -115,6 +115,7 @@ createConnectedBufferedChannels sz = do
 data ConnectedState
   = Disconnectd
   | Connected
+  deriving Show
 
 createConnectedBufferedChannelsWithDelay ::
   ( MonadSTM m,
