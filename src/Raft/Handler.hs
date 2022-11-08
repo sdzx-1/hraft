@@ -30,7 +30,6 @@ import Control.Monad
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadTime
 import Control.Monad.Class.MonadTimer
-import Control.Monad.IOSim (IOSim)
 import Control.Monad.Random (StdGen)
 import qualified Data.Map as Map
 import Data.Maybe
@@ -76,8 +75,7 @@ follower = do
     { persistentFun =
         PersistentFun
           { readCurrentTerm,
-            writeCurrentTerm,
-            writeVotedFor
+            writeCurrentTermAndVotedFor
           },
       peersRecvQueue
     } <-
@@ -102,8 +100,7 @@ follower = do
               appendAction peerNodeId appEnt
             GT -> do
               updateTimeout'
-              lift $ writeCurrentTerm term
-              lift $ writeVotedFor Nothing
+              lift $ writeCurrentTermAndVotedFor term Nothing
               appendAction peerNodeId appEnt
           follower
         MsgRequestVote reqVote@RequestVote {term} -> do
@@ -111,8 +108,7 @@ follower = do
             LT -> send' (MsgRequestVoteResult (RequestVoteResult currentTerm False))
             EQ -> voteAction peerNodeId reqVote
             GT -> do
-              lift $ writeCurrentTerm term
-              lift $ writeVotedFor Nothing
+              lift $ writeCurrentTermAndVotedFor term Nothing
               voteAction peerNodeId reqVote
           follower
         MsgAppendEntriesResult _ -> follower
@@ -134,8 +130,7 @@ candidate = do
     { persistentFun =
         PersistentFun
           { readCurrentTerm,
-            writeCurrentTerm,
-            writeVotedFor,
+            writeCurrentTermAndVotedFor,
             persisLastLogIndexAndTerm
           },
       nodeId,
@@ -144,9 +139,7 @@ candidate = do
     } <-
     R.ask @HEnv
   oldTerm <- lift readCurrentTerm
-  lift $ do
-    writeCurrentTerm (oldTerm + 1)
-    writeVotedFor (Just $ unNodeId nodeId)
+  lift $ writeCurrentTermAndVotedFor (oldTerm + 1) (Just $ unNodeId nodeId)
   timeTracerWith (CandidateNewElectionStart (oldTerm + 1))
   timeTracerWith (VotedForNode (unNodeId nodeId) (oldTerm + 1))
   randomElectionSize <- randomRDiffTime electionTimeRange
@@ -175,8 +168,7 @@ candidate = do
         { persistentFun =
             PersistentFun
               { readCurrentTerm,
-                writeCurrentTerm,
-                writeVotedFor
+                writeCurrentTermAndVotedFor
               },
           peersRecvQueue,
           peerInfos
@@ -202,9 +194,7 @@ candidate = do
                   updateTimeout'
                   follower
                 GT -> do
-                  lift $ do
-                    writeCurrentTerm term
-                    writeVotedFor Nothing
+                  lift $ writeCurrentTermAndVotedFor term Nothing
                   appendAction peerNodeId appEnt
                   updateTimeout'
                   follower
@@ -217,9 +207,7 @@ candidate = do
                   send' (MsgRequestVoteResult (RequestVoteResult currentTerm False))
                   go voteTrueSet voteFalseSet
                 GT -> do
-                  lift $ do
-                    writeCurrentTerm term
-                    writeVotedFor Nothing
+                  lift $ writeCurrentTermAndVotedFor term Nothing
                   voteAction peerNodeId reqVote
                   updateTimeout'
                   follower
@@ -245,9 +233,7 @@ candidate = do
                             follower
                           else go voteTrueSet newVoteFalseSet
                   GT -> do
-                    lift $ do
-                      writeCurrentTerm term
-                      writeVotedFor Nothing
+                    lift $ writeCurrentTermAndVotedFor term Nothing
                     updateTimeout'
                     follower
             MsgAppendEntriesResult _ -> go voteTrueSet voteFalseSet
@@ -345,8 +331,7 @@ leader = do
           { readCurrentTerm,
             persisLastLogIndexAndTerm,
             appendLog,
-            writeCurrentTerm,
-            writeVotedFor
+            writeCurrentTermAndVotedFor
           },
       peersRecvQueue,
       commitIndexTVar,
@@ -424,8 +409,7 @@ leader = do
                   EQ -> error "undefined behave"
                   GT -> do
                     stopDependProcess
-                    lift $ writeCurrentTerm term
-                    lift $ writeVotedFor Nothing
+                    lift $ writeCurrentTermAndVotedFor term Nothing
                     appendAction peerNodeId appEnt'
                     newTimeout'
                     timeTracerWith LeaderToFollowerAtAP
@@ -446,8 +430,7 @@ leader = do
                       go
                     GT -> do
                       stopDependProcess
-                      lift $ writeCurrentTerm term
-                      lift $ writeVotedFor Nothing
+                      lift $ writeCurrentTermAndVotedFor term Nothing
                       voteAction peerNodeId reqVote
                       newTimeout'
                       timeTracerWith LeaderToFollowerAtRV
@@ -461,8 +444,7 @@ leader = do
                     go
                   GT -> do
                     stopDependProcess
-                    lift $ writeCurrentTerm term
-                    lift $ writeVotedFor Nothing
+                    lift $ writeCurrentTermAndVotedFor term Nothing
                     newTimeout'
                     follower
               MsgRequestVoteResult _ -> go
@@ -554,7 +536,7 @@ voteAction
             PersistentFun
               { readCurrentTerm,
                 readVotedFor,
-                writeVotedFor,
+                writeCurrentTermAndVotedFor,
                 persisLastLogIndexAndTerm
               }
         } <-
@@ -571,7 +553,7 @@ voteAction
           voteFor <- lift readVotedFor
           case voteFor of
             Nothing -> do
-              lift $ writeVotedFor (Just candidateId)
+              lift $ writeCurrentTermAndVotedFor currentTerm (Just candidateId)
               timeTracerWith (VotedForNode candidateId currentTerm)
               send' (MsgRequestVoteResult (RequestVoteResult currentTerm True))
             Just canid -> do
@@ -582,7 +564,7 @@ voteAction
                 else send' (MsgRequestVoteResult (RequestVoteResult currentTerm False))
 
 -- type S s n = RandomC StdGen (Labelled HEnv (ReaderC (HEnv s n)) (Labelled HState (StateC (HState s n)) (LabelledLift Lift (Lift n) (LiftC n)))) ()
--- 
+--
 -- {-# SPECIALIZE follower :: S s IO #-}
 -- {-# SPECIALIZE follower :: S s (IOSim n) #-}
 -- {-# SPECIALIZE candidate :: S s IO #-}

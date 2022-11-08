@@ -84,10 +84,9 @@ data Msg s
 
 data PersistentFun log m = PersistentFun
   { readCurrentTerm :: m Term,
-    writeCurrentTerm :: Term -> m (),
+    writeCurrentTermAndVotedFor :: Term -> Maybe Id -> m (),
     --------
     readVotedFor :: m (Maybe Id),
-    writeVotedFor :: Maybe Id -> m (),
     ---------
     appendLog :: TermWarpper log -> m Index,
     readLog :: Index -> m (TermWarpper log),
