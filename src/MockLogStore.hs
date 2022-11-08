@@ -47,7 +47,7 @@ data W
   = OneRow RowIndex ColumIndex ColumIndex
   | MultRow (RowIndex, ColumIndex) [RowIndex] (RowIndex, ColumIndex)
 
-readLogs :: HasCallStack => Index -> Index -> LogStore log -> [log]
+readLogs :: (HasCallStack, Show log) => Index -> Index -> LogStore log -> [log]
 readLogs start end LogStore {vectorSize, currentIndex, store}
   | start > currentIndex || end > currentIndex || start > end = []
   | otherwise =
@@ -57,7 +57,17 @@ readLogs start end LogStore {vectorSize, currentIndex, store}
           if startRow == endRow
             then OneRow startRow startCol endCol
             else MultRow (startRow, startCol) [startRow + 1 .. endRow - 1] (endRow, endCol)
-        getRow row indexs = map (fromMaybe (error $ "undefined behave, " ++ show ((start, end), (row, indexs))) (Map.lookup row store) !) indexs
+        getRow row indexs =
+          map
+            ( fromMaybe
+                ( error $
+                    "undefined behave, "
+                      ++ show ((start, end), (row, indexs), currentIndex, store)
+                )
+                (Map.lookup row store)
+                !
+            )
+            indexs
      in case w of
           OneRow r s e -> getRow r [s .. e]
           MultRow (sRow, sCol) cx (eRow, eCol) ->

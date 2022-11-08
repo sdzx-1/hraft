@@ -75,9 +75,11 @@ data RequestVoteResult = RequestVoteResult
   }
   deriving (Generic, Eq, Serialise, Show, NFData)
 
+type RandomNumber = Int
+
 data Msg s
-  = MsgAppendEntries (AppendEntries s)
-  | MsgAppendEntriesResult AppendEntriesResult
+  = MsgAppendEntries RandomNumber (AppendEntries s)
+  | MsgAppendEntriesResult RandomNumber AppendEntriesResult
   | MsgRequestVote RequestVote
   | MsgRequestVoteResult RequestVoteResult
   deriving (Generic, Eq, Serialise, Show, NFData)
@@ -156,12 +158,13 @@ data SState = SState
 
 data SEnv s n = SEnv
   { nodeId :: NodeId,
+    peerNodeId :: PeerNodeId,
     sendFun :: Msg s -> n (),
     currentTerm :: Term,
     persistentFun :: PersistentFun s n,
     appendEntriesRpcRetryWaitTime :: DiffTime,
     heartbeatWaitTime :: DiffTime,
-    appendEntriesResultQueue :: TQueue n (Either Cmd AppendEntriesResult),
+    appendEntriesResultQueue :: TQueue n (Either Cmd (RandomNumber, AppendEntriesResult)),
     matchIndexTVar :: MatchIndexTVar n,
     lastLogIndexTVar :: LastLogIndexTVar n,
     commitIndexTVar :: CommitIndexTVar n,
@@ -190,6 +193,7 @@ data HandleTracer' s
   | LeaderToFollowerAtRV
   | LeaderStartSyncThread NodeId
   | LeaderRecvMsg (PeerNodeId, Msg s)
+  | SyncPrevLogIndex NodeId PeerNodeId Index
   deriving (Eq, Show, Generic, NFData)
 
 type HandleTracer s = TimeWrapper (HandleTracer' s)

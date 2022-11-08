@@ -25,6 +25,13 @@ data Persistent log m = Persistent
     logStore :: TVar m (LogStore (TermWarpper log))
   }
 
+initPersisten :: MonadSTM m => m (Persistent log m)
+initPersisten = do
+  a <- newTVarIO 0
+  b <- newTVarIO Nothing
+  c <- newTVarIO M.emptyLogStore
+  pure (Persistent a b c)
+
 instance M.Def a => M.Def (TermWarpper a) where
   def = TermWarpper (-1) M.def
 
@@ -47,10 +54,12 @@ createPersistentFun
     } =
     PersistentFun
       { readCurrentTerm = readTVarIO currentTermTVar,
-        writeCurrentTerm = atomically . writeTVar currentTermTVar,
+        writeCurrentTermAndVotedFor = \a b -> atomically $ do
+          writeTVar currentTermTVar a
+          writeTVar votedForTVar b,
         ---------
         readVotedFor = readTVarIO votedForTVar,
-        writeVotedFor = atomically . writeTVar votedForTVar,
+        -- writeVotedFor = atomically . writeTVar votedForTVar,
         ---------
         appendLog = \tlog -> atomically $ do
           oldLS <- readTVar logStore
@@ -123,32 +132,51 @@ data NetworkChange
       [(NodeId, Term, Index, [TermWarpper Int])]
   deriving (Eq, Generic, NFData)
 
-data NTracer a
-  = N1 (IdWrapper (IdWrapper (RecvTracer a)))
-  | N2 (IdWrapper (HandleTracer a))
-  | N3 [(NodeId, Index, Index, [TermWarpper Int])]
-  | N4 NetworkChange
-  deriving (Eq, Generic, NFData)
+renderUTCTime :: UTCTime -> String
+renderUTCTime ct = s'
+  where
+    s = formatTime defaultTimeLocale "%S%Q" ct
+    len = length s
+    s' =
+      if len < 7
+        then s ++ replicate (7 - len) ' '
+        else take 7 s
 
 instance Show NetworkChange where
   show (NetworkChange ct (a, b) dt c) =
     "====================================================\n"
-      ++ unlines (map ( \v -> "|| " ++ show v) c)
+      ++ unlines (map (\v -> "|| " ++ show v) c)
       ++ "== "
-      ++ s'
+      ++ renderUTCTime ct
       ++ " NECONFIG_CHNAGE "
       ++ show (a, b)
       ++ " "
       ++ show dt
-      ++ 
-    "\n"
-    where
-      s = formatTime defaultTimeLocale "%S%Q" ct
-      len = length s
-      s' =
-        if len < 7
-          then s ++ replicate (7 - len) ' '
-          else take 7 s
+      ++ "\n"
+
+data NodeRestart = NodeRestart UTCTime [NodeId] DiffTime
+  deriving (Eq, Generic, NFData)
+
+instance Show NodeRestart where
+  show (NodeRestart ct ids dt) =
+    "   "
+      ++ renderUTCTime ct
+      ++ " NodeRestart "
+      ++ show ids
+      ++ " "
+      ++ show dt
+
+type CommitIndex = Int
+
+type LastAppliedIndex = Int
+
+data NTracer a
+  = N1 (IdWrapper (IdWrapper (RecvTracer a)))
+  | N2 (IdWrapper (HandleTracer a))
+  | N3 [(NodeId, CommitIndex, LastAppliedIndex, [TermWarpper Int])]
+  | N4 NetworkChange
+  | N5 NodeRestart
+  deriving (Eq, Generic, NFData)
 
 instance Show a => Show (NTracer a) where
   show (N1 (IdWrapper i1 (IdWrapper i2 rt))) = show i1 ++ " <- " ++ show i2 ++ ": " ++ show rt
@@ -169,3 +197,4 @@ instance Show a => Show (NTracer a) where
       )
       rs
   show (N4 v) = show v
+  show (N5 v) = show v
