@@ -24,7 +24,7 @@ import Control.Monad.IOSim (IOSim, runSimTrace, selectTraceEventsDynamic, traceM
 import Control.Tracer
 import Data.Bifunctor (bimap)
 import qualified Data.ByteString.Lazy as LBS
-import Data.List (delete)
+import Data.List (delete, nub)
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe (fromJust)
@@ -438,13 +438,12 @@ seletElectionSuccess :: NTracer s -> [HandleTracer' s]
 seletElectionSuccess (N2 (IdWrapper _ (TimeWrapper _ h@(CandidateElectionSuccess _ _)))) = [h]
 seletElectionSuccess _ = []
 
--- term must inc
-prop_election_success :: Env -> Bool
-prop_election_success env = prop res
+-- election term doesn't come up more than once
+prop_election_success_term :: Env -> Bool
+prop_election_success_term env = length terms == length (nub terms)
   where
     res = concatMap seletElectionSuccess $ runCreateAll env
-    prop [CandidateElectionSuccess _ t] = t > 0
-    prop (CandidateElectionSuccess _ t : xs@(CandidateElectionSuccess _ t1 : _)) = t < t1 && prop xs
+    terms = map (\(CandidateElectionSuccess _ t) -> t) res
 
 getCommitLog :: NTracer a -> [TermWarpper Int]
 getCommitLog (N3 xs) =
