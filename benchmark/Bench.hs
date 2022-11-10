@@ -66,10 +66,12 @@ createPersistentFun
     } =
     PersistentFun
       { readCurrentTerm = readTVarIO currentTermTVar,
-        writeCurrentTerm = atomically . writeTVar currentTermTVar,
+        writeCurrentTermAndVotedFor = \a b -> atomically $ do
+          writeTVar currentTermTVar a
+          writeTVar votedForTVar b,
         ---------
         readVotedFor = readTVarIO votedForTVar,
-        writeVotedFor = atomically . writeTVar votedForTVar,
+        -- writeVotedFor = atomically . writeTVar votedForTVar,
         ---------
         appendLog = \tlog -> atomically $ do
           oldLS <- readTVar logStore
@@ -210,23 +212,23 @@ createFollower
   nodeId
   peerChannels =
     do
-      a <- lift $ newTVarIO 0
-      b <- lift $ newTVarIO Nothing
-      c <- lift $ newTVarIO M.emptyLogStore
+      a <- sendM $ newTVarIO 0
+      b <- sendM $ newTVarIO Nothing
+      c <- sendM $ newTVarIO M.emptyLogStore
       let pf = createPersistentFun $ Persistent a b c
           elecTimeRange = (0.2, 0.4)
       newElectSize <- randomRDiffTime elecTimeRange
-      newElectTimeout <- lift $ newTimeout newElectSize
+      newElectTimeout <- sendM $ newTimeout newElectSize
 
-      ctv <- lift $ newTVarIO 0
-      latv <- lift $ newTVarIO 0
-      _ <- lift $ forkIO $ aProcess (readLogs pf) ctv latv 0 (\i k -> pure (i + k))
+      ctv <- sendM $ newTVarIO 0
+      latv <- sendM $ newTVarIO 0
+      _ <- sendM $ forkIO $ aProcess (readLogs pf) ctv latv 0 (\i k -> pure (i + k))
 
       let tEncode = convertCborEncoder (encode @(Msg Int))
-      tDecode <- lift $ convertCborDecoder (decode @(Msg Int))
-      peersRecvQueue <- lift newTQueueIO
+      tDecode <- sendM $ convertCborDecoder (decode @(Msg Int))
+      peersRecvQueue <- sendM newTQueueIO
       peerInfoMaps <- forM peerChannels $ \(peerNodeId, channel1) -> do
-        void . lift . forkIO $
+        void . sendM . forkIO $
           rProcess (Tracer (traceM . N1 . IdWrapper (unNodeId nodeId) . IdWrapper (unPeerNodeId peerNodeId))) peerNodeId peersRecvQueue channel1 tDecode
         pure (peerNodeId, PeerInfo (send channel1 . tEncode))
       let env =
@@ -245,7 +247,7 @@ createFollower
               }
           state = HState newElectSize newElectTimeout
       ri <- uniform
-      void $ lift $ forkIO $ void $ runFollow state env (mkStdGen ri)
+      void $ sendM $ forkIO $ void $ runFollow state env (mkStdGen ri)
       pure env
 
 networkPartition ::
@@ -269,22 +271,22 @@ networkPartition nodeIds nsls ccm = forever $ do
          { nodeId,
            commitIndexTVar,
            persistentFun = PersistentFun {getAllLogs, readCurrentTerm}
-         } -> lift $ do
+         } -> sendM $ do
           commitIndex <- readTVarIO commitIndexTVar
           atls <- getAllLogs
           term <- readCurrentTerm
           pure (nodeId, term, commitIndex, atls)
-  t <- lift getCurrentTime
-  lift $ traceWith (Tracer (traceM . N4 @Int)) (NetworkChange t (va, vb) ta kls)
+  t <- sendM getCurrentTime
+  sendM $ traceWith (Tracer (traceM . N4 @Int)) (NetworkChange t (va, vb) ta kls)
 
-  forM_ newLs $ \(a, b) -> lift $
+  forM_ newLs $ \(a, b) -> sendM $
     atomically $ do
       let tv10 = snd $ fromJust $ Map.lookup (a, b) ccm
       writeTVar tv10 Disconnectd
 
-  lift $ threadDelay ta
+  sendM $ threadDelay ta
 
-  forM_ newLs $ \(a, b) -> lift $
+  forM_ newLs $ \(a, b) -> sendM $
     atomically $ do
       let tv10 = snd $ fromJust $ Map.lookup (a, b) ccm
       writeTVar tv10 Connected
@@ -299,16 +301,16 @@ createAll = do
   let nodeIds = [0 .. nds]
   ccs <- forM (ft nodeIds) $ \(na, nb) -> do
     dt <- randomRDiffTime (0.01, 0.03)
-    connStateTVar <- lift $ newTVarIO Connected
+    connStateTVar <- sendM $ newTVarIO Connected
     (ca, cb) <-
-      lift $ createConnectedBufferedChannelsWithDelay @_ @LBS.ByteString connStateTVar dt 100
+      sendM $ createConnectedBufferedChannelsWithDelay @_ @LBS.ByteString connStateTVar dt 100
     pure
       [ ((na, nb), (ca, connStateTVar)),
         ((nb, na), (cb, connStateTVar))
       ]
   let ccm = Map.fromList $ concat ccs
-  userLogQueue <- lift newTQueueIO
-  _ <- lift $
+  userLogQueue <- sendM newTQueueIO
+  _ <- sendM $
     forkIO $ do
       forM_ [1 ..] $ \i -> do
         atomically $ writeTQueue userLogQueue i
@@ -322,14 +324,14 @@ createAll = do
 
   ri <- uniform
   _ <-
-    lift
+    sendM
       . forkIO
       . void
       . runLabelledLift
       . runRandom (mkStdGen ri)
       $ networkPartition nodeIds nsls ccm
   dt <- randomRDiffTime (10, 30)
-  lift $ threadDelay dt
+  sendM $ threadDelay dt
 
   kls <-
     forM nsls $
@@ -338,12 +340,12 @@ createAll = do
            commitIndexTVar,
            lastAppliedTVar,
            persistentFun
-         } -> lift $ do
+         } -> sendM $ do
           commitIndex <- readTVarIO commitIndexTVar
           lastApplied <- readTVarIO lastAppliedTVar
           atls <- getAllLogs persistentFun
           pure (nodeId, commitIndex, lastApplied, atls)
-  lift $ traceWith (Tracer (traceM . N3 @Int)) kls
+  sendM $ traceWith (Tracer (traceM . N3 @Int)) kls
 
 verifyResult :: NTracer a -> Bool
 verifyResult (N3 xs) =

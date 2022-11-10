@@ -43,8 +43,8 @@ timeTracerWith ::
   m ()
 timeTracerWith a = do
   HEnv {tracer} <- R.ask @HEnv
-  ct <- lift getCurrentTime
-  lift $ traceWith tracer (TimeWrapper ct a)
+  ct <- sendM getCurrentTime
+  sendM $ traceWith tracer (TimeWrapper ct a)
 {-# INLINE timeTracerWith #-}
 
 waitTimeout :: (MonadTimer n, MonadSTM n) => Timeout n -> STM n ()
@@ -63,7 +63,7 @@ updateTimeout' ::
   m ()
 updateTimeout' = do
   HState {electionSize, electionTimeout} <- S.get @HState
-  lift $ updateTimeout electionTimeout electionSize
+  sendM $ updateTimeout electionTimeout electionSize
 {-# INLINE updateTimeout' #-}
 
 newTimeout' ::
@@ -74,7 +74,7 @@ newTimeout' ::
   m ()
 newTimeout' = do
   HState {electionSize} <- S.get @HState
-  to <- lift $ newTimeout electionSize
+  to <- sendM $ newTimeout electionSize
   S.put @HState (HState {electionSize, electionTimeout = to})
 {-# INLINE newTimeout' #-}
 
@@ -97,5 +97,5 @@ getPeerSendFun ::
 getPeerSendFun peerNodeId = do
   HEnv {peerInfos} <- R.ask @HEnv
   let send' = peerSendFun $ fromJust $ Map.lookup peerNodeId peerInfos
-  pure (lift . send')
+  pure (sendM . send')
 {-# INLINE getPeerSendFun #-}

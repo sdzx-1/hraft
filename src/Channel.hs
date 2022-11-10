@@ -198,9 +198,9 @@ convertCborDecoderLBS ::
   CBOR.Decoder s a ->
   (forall b. ST s b -> m b) ->
   m (DecodeStep LBS.ByteString CBOR.DeserialiseFailure m a)
-convertCborDecoderLBS cborDecode liftST =
+convertCborDecoderLBS cborDecode sendMST =
   go []
-    =<< liftST (CBOR.deserialiseIncremental cborDecode)
+    =<< sendMST (CBOR.deserialiseIncremental cborDecode)
   where
     go ::
       [BS.ByteString] ->
@@ -215,10 +215,10 @@ convertCborDecoderLBS cborDecode liftST =
       where
         trailing' = LBS.fromChunks (trailing : cs)
     go _ (CBOR.Fail _ _ e) = return (DecodeFail e)
-    go (c : cs) (CBOR.Partial k) = go cs =<< liftST (k (Just c))
+    go (c : cs) (CBOR.Partial k) = go cs =<< sendMST (k (Just c))
     go [] (CBOR.Partial k) = return $
       DecodePartial $ \case
-        Nothing -> go [] =<< liftST (k Nothing)
+        Nothing -> go [] =<< sendMST (k Nothing)
         Just bs -> go cs (CBOR.Partial k) where cs = LBS.toChunks bs
 
 convertCborEncoder :: (a -> CBOR.Encoding) -> a -> LBS.ByteString

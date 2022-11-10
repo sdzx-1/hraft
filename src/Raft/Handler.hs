@@ -18,7 +18,7 @@ module Raft.Handler where
 import Control.Algebra
 import Control.Applicative ((<|>))
 import Control.Arrow (second)
-import Control.Carrier.Lift
+import Control.Carrier.Lift (runM)
 import Control.Carrier.Random.Gen
 import Control.Carrier.Reader
 import Control.Carrier.State.Strict
@@ -50,8 +50,7 @@ runFollow ::
   StdGen ->
   n (HState s n, (StdGen, ()))
 runFollow s e g =
-  runM
-    . runLabelledLift
+  runLabelledLift
     . runState @(HState s n) s
     . runLabelled @HState
     . runReader @(HEnv s n) e
@@ -82,7 +81,7 @@ follower = do
     R.ask @HEnv
   HState {electionTimeout} <- S.get @HState
   val <-
-    lift $ atomically $ (Left <$> waitTimeout electionTimeout) <|> (Right <$> readTQueue peersRecvQueue)
+    sendM $ atomically $ (Left <$> waitTimeout electionTimeout) <|> (Right <$> readTQueue peersRecvQueue)
   case val of
     Left () -> do
       timeTracerWith FollowerTimeoutToCandidate
@@ -90,7 +89,7 @@ follower = do
     Right (peerNodeId, msg) -> do
       timeTracerWith (FollowerRecvMsg (peerNodeId, msg))
       send' <- getPeerSendFun peerNodeId
-      currentTerm <- lift readCurrentTerm
+      currentTerm <- sendM readCurrentTerm
       case msg of
         MsgAppendEntries ranNum appEnt@AppendEntries {term} -> do
           case compare term currentTerm of
@@ -100,7 +99,7 @@ follower = do
               appendAction ranNum peerNodeId appEnt
             GT -> do
               updateTimeout'
-              lift $ writeCurrentTermAndVotedFor term Nothing
+              sendM $ writeCurrentTermAndVotedFor term Nothing
               appendAction ranNum peerNodeId appEnt
           follower
         MsgRequestVote reqVote@RequestVote {term} -> do
@@ -108,7 +107,7 @@ follower = do
             LT -> send' (MsgRequestVoteResult (RequestVoteResult currentTerm False))
             EQ -> voteAction peerNodeId reqVote
             GT -> do
-              lift $ writeCurrentTermAndVotedFor term Nothing
+              sendM $ writeCurrentTermAndVotedFor term Nothing
               voteAction peerNodeId reqVote
           follower
         MsgAppendEntriesResult _ _ -> follower
@@ -138,17 +137,17 @@ candidate = do
       electionTimeRange
     } <-
     R.ask @HEnv
-  oldTerm <- lift readCurrentTerm
-  lift $ writeCurrentTermAndVotedFor (oldTerm + 1) (Just $ unNodeId nodeId)
+  oldTerm <- sendM readCurrentTerm
+  sendM $ writeCurrentTermAndVotedFor (oldTerm + 1) (Just $ unNodeId nodeId)
   timeTracerWith (CandidateNewElectionStart (oldTerm + 1))
   timeTracerWith (VotedForNode (unNodeId nodeId) (oldTerm + 1))
   randomElectionSize <- randomRDiffTime electionTimeRange
-  newTimeo <- lift $ newTimeout randomElectionSize
+  newTimeo <- sendM $ newTimeout randomElectionSize
   S.put @HState (HState {electionSize = randomElectionSize, electionTimeout = newTimeo})
   timeTracerWith (CandidateSetNewElectionSzie randomElectionSize)
   allSend <- mapM getPeerSendFun (Map.keys peerInfos)
-  currentTerm <- lift readCurrentTerm
-  (persisLastLogIndexVal, persisLastLogTermVal) <- lift persisLastLogIndexAndTerm
+  currentTerm <- sendM readCurrentTerm
+  (persisLastLogIndexVal, persisLastLogTermVal) <- sendM persisLastLogIndexAndTerm
   timeTracerWith (CandidateSendVotoForMsgToAll (Map.keys peerInfos))
   forM_ allSend $ \send' -> do
     send'
@@ -174,14 +173,14 @@ candidate = do
           peerInfos
         } <-
         R.ask @HEnv
-      val <- lift $ atomically $ (Left <$> waitTimeout electionTimeout) <|> (Right <$> readTQueue peersRecvQueue)
+      val <- sendM $ atomically $ (Left <$> waitTimeout electionTimeout) <|> (Right <$> readTQueue peersRecvQueue)
       case val of
         Left () -> do
           timeTracerWith CandidateElectionTimeout
           candidate
         Right (peerNodeId, msg) -> do
           timeTracerWith (CandidateRecvMsg (peerNodeId, msg))
-          currentTerm <- lift readCurrentTerm
+          currentTerm <- sendM readCurrentTerm
           send' <- getPeerSendFun peerNodeId
           case msg of
             MsgAppendEntries ranNum appEnt@AppendEntries {term} -> do
@@ -194,7 +193,7 @@ candidate = do
                   updateTimeout'
                   follower
                 GT -> do
-                  lift $ writeCurrentTermAndVotedFor term Nothing
+                  sendM $ writeCurrentTermAndVotedFor term Nothing
                   appendAction ranNum peerNodeId appEnt
                   updateTimeout'
                   follower
@@ -207,7 +206,7 @@ candidate = do
                   send' (MsgRequestVoteResult (RequestVoteResult currentTerm False))
                   go voteTrueSet voteFalseSet
                 GT -> do
-                  lift $ writeCurrentTermAndVotedFor term Nothing
+                  sendM $ writeCurrentTermAndVotedFor term Nothing
                   voteAction peerNodeId reqVote
                   updateTimeout'
                   follower
@@ -233,7 +232,7 @@ candidate = do
                             follower
                           else go voteTrueSet newVoteFalseSet
                   GT -> do
-                    lift $ writeCurrentTermAndVotedFor term Nothing
+                    sendM $ writeCurrentTermAndVotedFor term Nothing
                     updateTimeout'
                     follower
             MsgAppendEntriesResult _ _ -> go voteTrueSet voteFalseSet
@@ -251,7 +250,7 @@ sendMsgAppEnt appEnt = do
   SEnv {sendFun} <- R.ask @SEnv
   ranNum <- uniform
   put ranNum
-  lift $ sendFun (MsgAppendEntries ranNum appEnt)
+  sendM $ sendFun (MsgAppendEntries ranNum appEnt)
 
 sync ::
   ( HasLabelled SEnv (Reader (SEnv s n)) sig m,
@@ -279,8 +278,8 @@ sync appEnt = do
       commitIndexTVar
     } <-
     R.ask @SEnv
-  timeout' <- lift $ newTimeout appendEntriesRpcRetryWaitTime
-  res <- lift $ atomically $ (Left <$> readTQueue appendEntriesResultQueue) <|> (Right <$> waitTimeout timeout')
+  timeout' <- sendM $ newTimeout appendEntriesRpcRetryWaitTime
+  res <- sendM $ atomically $ (Left <$> readTQueue appendEntriesResultQueue) <|> (Right <$> waitTimeout timeout')
   case res of
     Right _ -> do
       sendMsgAppEnt appEnt
@@ -293,19 +292,19 @@ sync appEnt = do
         else do
           if success
             then do
-              lift $
+              sendM $
                 atomically $ writeTVar matchIndexTVar (syncingPrevLogIndex + syncingLogLength)
               let check' = do
                     lastLogIndex <- readTVar lastLogIndexTVar
                     if lastLogIndex > syncingPrevLogIndex + syncingLogLength
                       then pure LastLogIndexGTSyncingParams
                       else retry
-              timeout'' <- lift $ newTimeout heartbeatWaitTime
-              res' <- lift $ atomically $ (Left <$> check') <|> (Right <$> waitTimeout timeout'')
+              timeout'' <- sendM $ newTimeout heartbeatWaitTime
+              res' <- sendM $ atomically $ (Left <$> check') <|> (Right <$> waitTimeout timeout'')
               case res' of
                 Right _ -> do
-                  (pi', pt) <- lift $ persisLastLogIndexAndTerm persistentFun
-                  commitIndex <- lift $ readTVarIO commitIndexTVar
+                  (pi', pt) <- sendM $ persisLastLogIndexAndTerm persistentFun
+                  commitIndex <- sendM $ readTVarIO commitIndexTVar
                   let appEnt' = AppendEntries currentTerm (unNodeId nodeId) pi' pt [] commitIndex
                   sendMsgAppEnt appEnt'
                   put (SState {syncingPrevLogIndex = pi', syncingLogLength = 0})
@@ -313,17 +312,17 @@ sync appEnt = do
                 Left LastLogIndexGTSyncingParams -> do
                   let newPreIndex = syncingPrevLogIndex + syncingLogLength
                   put (SState {syncingPrevLogIndex = newPreIndex, syncingLogLength = 1})
-                  TermWarpper newPreTerm _ <- lift $ readLog persistentFun newPreIndex
-                  log' <- lift $ readLog persistentFun (newPreIndex + 1)
-                  commitIndex <- lift $ readTVarIO commitIndexTVar
+                  TermWarpper newPreTerm _ <- sendM $ readLog persistentFun newPreIndex
+                  log' <- sendM $ readLog persistentFun (newPreIndex + 1)
+                  commitIndex <- sendM $ readTVarIO commitIndexTVar
                   let appEnt' = AppendEntries currentTerm (unNodeId nodeId) newPreIndex newPreTerm [log'] commitIndex
                   sendMsgAppEnt appEnt'
                   sync appEnt'
             else do
               let newPreIndex = syncingPrevLogIndex - 1
               put (SState {syncingPrevLogIndex = newPreIndex, syncingLogLength = 0})
-              TermWarpper newPreTerm _ <- lift $ readLog persistentFun newPreIndex
-              commitIndex <- lift $ readTVarIO commitIndexTVar
+              TermWarpper newPreTerm _ <- sendM $ readLog persistentFun newPreIndex
+              commitIndex <- sendM $ readTVarIO commitIndexTVar
               let appEnt' = AppendEntries currentTerm (unNodeId nodeId) newPreIndex newPreTerm [] commitIndex
               sendMsgAppEnt appEnt'
               sync appEnt'
@@ -358,18 +357,18 @@ leader = do
       tracer
     } <-
     R.ask @HEnv
-  currentTerm <- lift readCurrentTerm
-  (pi', pt) <- lift persisLastLogIndexAndTerm
-  commitIndex <- lift $ readTVarIO commitIndexTVar
+  currentTerm <- sendM readCurrentTerm
+  (pi', pt) <- sendM persisLastLogIndexAndTerm
+  commitIndex <- sendM $ readTVarIO commitIndexTVar
   timeTracerWith (LeaderSendEmptyAppendEntries (Map.keys peerInfos))
   ranNum <- uniform
   let appEnt = AppendEntries currentTerm (unNodeId nodeId) pi' pt [] commitIndex
       msg = MsgAppendEntries ranNum appEnt
   mapM_ (getPeerSendFun >=> ($ msg)) $ Map.keys peerInfos
-  lastLogIndexTVar <- lift $ newTVarIO pi'
+  lastLogIndexTVar <- sendM $ newTVarIO pi'
   pns <- forM (Map.toList peerInfos) $ \(peerNodeId, peerInfo) -> do
-    matchIndexTVar <- lift $ newTVarIO 0
-    appendEntriesResultQueue <- lift newTQueueIO
+    matchIndexTVar <- sendM $ newTVarIO 0
+    appendEntriesResultQueue <- sendM newTQueueIO
     let sState = SState {syncingPrevLogIndex = pi', syncingLogLength = 0}
         sEnv =
           SEnv
@@ -388,10 +387,9 @@ leader = do
             }
     ri <- uniform
     void
-      . lift
+      . sendM
       . forkIO
       . void
-      . runM
       . runLabelledLift
       . runReader sEnv
       . runLabelled @SEnv
@@ -404,19 +402,19 @@ leader = do
   let miTVars = map (snd . snd) pns
       tmpPeersResultQueue = Map.fromList $ map (second fst) pns
 
-  cmdQueue <- lift newTQueueIO
-  _ <- lift $ forkIO $ cProcess ps cmdQueue commitIndexTVar miTVars 0
+  cmdQueue <- sendM newTQueueIO
+  _ <- sendM $ forkIO $ cProcess ps cmdQueue commitIndexTVar miTVars 0
 
   let stopDependProcess = do
-        lift $ atomically $ writeTQueue cmdQueue Terminate
-        forM_ (Map.elems tmpPeersResultQueue) $ \tq -> lift $ atomically (writeTQueue tq (Left Terminate))
+        sendM $ atomically $ writeTQueue cmdQueue Terminate
+        forM_ (Map.elems tmpPeersResultQueue) $ \tq -> sendM $ atomically (writeTQueue tq (Left Terminate))
 
       go = do
-        mMsg <- lift $ atomically $ (Left <$> readTQueue peersRecvQueue) <|> (Right <$> readTQueue userLogQueue)
+        mMsg <- sendM $ atomically $ (Left <$> readTQueue peersRecvQueue) <|> (Right <$> readTQueue userLogQueue)
         case mMsg of
           Right log' -> do
-            index <- lift $ appendLog (TermWarpper currentTerm log')
-            lift $ atomically $ writeTVar lastLogIndexTVar index
+            index <- sendM $ appendLog (TermWarpper currentTerm log')
+            sendM $ atomically $ writeTVar lastLogIndexTVar index
             go
           Left (peerNodeId, msg') -> do
             timeTracerWith (LeaderRecvMsg (peerNodeId, msg'))
@@ -431,7 +429,7 @@ leader = do
                   EQ -> error "undefined behave"
                   GT -> do
                     stopDependProcess
-                    lift $ writeCurrentTermAndVotedFor term Nothing
+                    sendM $ writeCurrentTermAndVotedFor term Nothing
                     appendAction ranNum' peerNodeId appEnt'
                     newTimeout'
                     timeTracerWith LeaderToFollowerAtAP
@@ -452,7 +450,7 @@ leader = do
                       go
                     GT -> do
                       stopDependProcess
-                      lift $ writeCurrentTermAndVotedFor term Nothing
+                      sendM $ writeCurrentTermAndVotedFor term Nothing
                       voteAction peerNodeId reqVote
                       newTimeout'
                       timeTracerWith LeaderToFollowerAtRV
@@ -462,11 +460,11 @@ leader = do
                 case compare term currentTerm of
                   LT -> go
                   EQ -> do
-                    lift $ atomically $ writeTQueue tq (Right (ranNum', apr))
+                    sendM $ atomically $ writeTQueue tq (Right (ranNum', apr))
                     go
                   GT -> do
                     stopDependProcess
-                    lift $ writeCurrentTermAndVotedFor term Nothing
+                    sendM $ writeCurrentTermAndVotedFor term Nothing
                     newTimeout'
                     follower
               MsgRequestVoteResult _ -> go
@@ -507,28 +505,28 @@ appendAction
         } <-
         R.ask @HEnv
       send' <- getPeerSendFun peerNodeId
-      currentTerm <- lift readCurrentTerm
-      prevCheck <- lift $ checkAppendentries prevLogIndex prevLogTerm
+      currentTerm <- sendM readCurrentTerm
+      prevCheck <- sendM $ checkAppendentries prevLogIndex prevLogTerm
       timeTracerWith (FollowerCheckPrevLog prevCheck)
       if not prevCheck
         then send' (MsgAppendEntriesResult ranNum (AppendEntriesResult currentTerm False))
         else do
           let go [] = pure ()
               go k@((i, _) : es) = do
-                checkEntryResult <- lift $ checkEntry (prevLogIndex + i) currentTerm
+                checkEntryResult <- sendM $ checkEntry (prevLogIndex + i) currentTerm
                 case checkEntryResult of
                   Exis -> go es
                   Null -> do
-                    mapM_ (lift . appendLog) (snd <$> k)
-                  Diff -> lift $ do
+                    mapM_ (sendM . appendLog) (snd <$> k)
+                  Diff -> sendM $ do
                     removeLogs (prevLogIndex + i)
                     mapM_ appendLog (snd <$> k)
           go (zip [1 ..] entries)
-          commitIndex <- lift $ readTVarIO commitIndexTVar
+          commitIndex <- sendM $ readTVarIO commitIndexTVar
           if leaderCommit > commitIndex
             then do
               let persisLastLogIndexVal = prevLogIndex + length entries
-              lift $ atomically $ writeTVar commitIndexTVar (min leaderCommit persisLastLogIndexVal)
+              sendM $ atomically $ writeTVar commitIndexTVar (min leaderCommit persisLastLogIndexVal)
               timeTracerWith (FollowerUpdateCommitIndex leaderCommit persisLastLogIndexVal (min leaderCommit persisLastLogIndexVal))
             else pure ()
           send' (MsgAppendEntriesResult ranNum (AppendEntriesResult currentTerm True))
@@ -562,18 +560,18 @@ voteAction
         } <-
         R.ask @HEnv
       send' <- getPeerSendFun peerNodeId
-      currentTerm <- lift readCurrentTerm
-      (persisLastLogIndexVal, persisLastLogTermVal) <- lift persisLastLogIndexAndTerm
+      currentTerm <- sendM readCurrentTerm
+      (persisLastLogIndexVal, persisLastLogTermVal) <- sendM persisLastLogIndexAndTerm
       let isCandidateLogNewst =
             lastLogTerm > persisLastLogTermVal
               || (lastLogTerm == persisLastLogTermVal && lastLogIndex >= persisLastLogIndexVal)
       if not isCandidateLogNewst
         then send' (MsgRequestVoteResult (RequestVoteResult currentTerm False))
         else do
-          voteFor <- lift readVotedFor
+          voteFor <- sendM readVotedFor
           case voteFor of
             Nothing -> do
-              lift $ writeCurrentTermAndVotedFor currentTerm (Just candidateId)
+              sendM $ writeCurrentTermAndVotedFor currentTerm (Just candidateId)
               timeTracerWith (VotedForNode candidateId currentTerm)
               send' (MsgRequestVoteResult (RequestVoteResult currentTerm True))
             Just canid -> do

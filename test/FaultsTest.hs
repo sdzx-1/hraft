@@ -8,7 +8,7 @@ module FaultsTest where
 
 import Channel
 import Codec.Serialise
-import Control.Carrier.Lift
+import Control.Carrier.Lift (Lift, runM)
 import Control.Carrier.Random.Gen
 import Control.Carrier.Reader
 import Control.Carrier.State.Strict
@@ -154,12 +154,12 @@ killNode ::
 killNode nodeId = do
   thid <- fmap (fromJust . Map.lookup nodeId) $ L.get @BaseState
   NodeInfo {commitIndexTVar, lastAppliedTVar, peerChannels} <- fmap (fromJust . Map.lookup nodeId . nodeInfos) $ L.ask @BaseEnv
-  lift $ atomically $ forM_ peerChannels $ \(_, _, tv) -> writeTVar tv Disconnectd
-  lift $
+  sendM $ atomically $ forM_ peerChannels $ \(_, _, tv) -> writeTVar tv Disconnectd
+  sendM $
     atomically $ do
       writeTVar commitIndexTVar 0
       writeTVar lastAppliedTVar 0
-  mapM_ (lift . killThread) thid
+  mapM_ (sendM . killThread) thid
 
 restartFollower ::
   ( Has Random sig m,
@@ -171,7 +171,7 @@ restartFollower ::
   m ()
 restartFollower nodeId = do
   pcs <- fmap (peerChannels . fromJust . Map.lookup nodeId . nodeInfos) $ L.ask @BaseEnv
-  lift $ atomically $ forM_ pcs $ \(_, _, tv) -> writeTVar tv Connected
+  sendM $ atomically $ forM_ pcs $ \(_, _, tv) -> writeTVar tv Connected
   createFollower nodeId
 
 createFollower ::
@@ -199,21 +199,21 @@ createFollower nodeId = do
         } = fromJust $ Map.lookup nodeId nodeInfos
   let pf = createPersistentFun persistent
   newElectSize <- randomRDiffTime electionTimeRange
-  newElectTimeout <- lift $ newTimeout newElectSize
+  newElectTimeout <- sendM $ newTimeout newElectSize
 
-  lift $
+  sendM $
     atomically $ do
       writeTVar commitIndexTVar 0
       writeTVar lastAppliedTVar 0
 
-  thid1 <- lift $ forkIO $ aProcess (readLogs pf) commitIndexTVar lastAppliedTVar 0 (\i k -> pure (i + k))
+  thid1 <- sendM $ forkIO $ aProcess (readLogs pf) commitIndexTVar lastAppliedTVar 0 (\i k -> pure (i + k))
 
   let tEncode = convertCborEncoder (encode @(Msg Int))
-  tDecode <- lift $ convertCborDecoder (decode @(Msg Int))
-  peersRecvQueue <- lift newTQueueIO
+  tDecode <- sendM $ convertCborDecoder (decode @(Msg Int))
+  peersRecvQueue <- sendM newTQueueIO
   peerInfoMaps' <- forM peerChannels $ \(peerNodeId, channel1, _) -> do
     thid2 <-
-      lift . forkIO $
+      sendM . forkIO $
         rProcess
           ( Tracer
               ( traceM
@@ -244,7 +244,7 @@ createFollower nodeId = do
           }
       state' = HState newElectSize newElectTimeout
   randomI <- uniform
-  thid <- lift $ forkIO $ void $ runFollow state' env (mkStdGen randomI)
+  thid <- sendM $ forkIO $ void $ runFollow state' env (mkStdGen randomI)
   L.modify @BaseState (Map.insert nodeId (thid1 : thid : thids))
 
 createAll :: (HasLabelledLift (IOSim s) sig m, Has Random sig m) => Env -> m ()
@@ -260,14 +260,14 @@ createAll
     connectMap <- fmap (Map.fromList . concat) $
       forM (ft nodeIds) $ \(na, nb) -> do
         dt <- randomRDiffTime netDelayRange
-        connStateTVar <- lift $ newTVarIO Connected
+        connStateTVar <- sendM $ newTVarIO Connected
         (ca, cb) <-
-          lift $ createConnectedBufferedChannelsWithDelay @_ @LBS.ByteString connStateTVar dt 100
+          sendM $ createConnectedBufferedChannelsWithDelay @_ @LBS.ByteString connStateTVar dt 100
         pure
           [ ((na, nb), (ca, connStateTVar)),
             ((nb, na), (cb, connStateTVar))
           ]
-    userLogQueue <- lift $ newTQueueIO @_ @Int
+    userLogQueue <- sendM $ newTQueueIO @_ @Int
     nodeInfos <- fmap Map.fromList
       . forM nodeIds
       $ \nodeId -> do
@@ -278,9 +278,9 @@ createAll
                      in (PeerNodeId i, a, b)
                 )
                 (delete nodeId nodeIds)
-        persistent <- lift initPersisten
-        commitIndexTVar <- lift $ newTVarIO 0
-        lastAppliedTVar <- lift $ newTVarIO 0
+        persistent <- sendM initPersisten
+        commitIndexTVar <- sendM $ newTVarIO 0
+        lastAppliedTVar <- sendM $ newTVarIO 0
         pure
           ( nodeId,
             NodeInfo
@@ -302,19 +302,19 @@ createAll
 
     ---------------------------------
     randomI' <- uniform
-    _ <- lift
+    _ <- sendM
       . forkIO
       . void
       . runLabelledLift
       . runRandom (mkStdGen randomI')
       $ do
         forM_ [1 ..] $ \i -> do
-          lift $ atomically $ writeTQueue userLogQueue i
+          sendM $ atomically $ writeTQueue userLogQueue i
           dt <- randomRDiffTime (0.1, 0.5)
-          lift $ threadDelay dt
+          sendM $ threadDelay dt
     ---------------------------------
     randomI'' <- uniform
-    _ <- lift
+    _ <- sendM
       . forkIO
       . void
       . runLabelledLift
@@ -332,7 +332,7 @@ createAll
                 then pure mv
                 else retry
 
-        newMaxCommitIndex <- lift $ atomically checkMaxCommitChange
+        newMaxCommitIndex <- sendM $ atomically checkMaxCommitChange
         put newMaxCommitIndex
 
         n3 <-
@@ -345,15 +345,15 @@ createAll
                  }
                ) -> do
                 let PersistentFun {getAllLogs} = createPersistentFun persistent
-                commitIndex <- lift $ readTVarIO commitIndexTVar
-                lastApplied <- lift $ readTVarIO lastAppliedTVar
-                allLogs <- lift getAllLogs
+                commitIndex <- sendM $ readTVarIO commitIndexTVar
+                lastApplied <- sendM $ readTVarIO lastAppliedTVar
+                allLogs <- sendM getAllLogs
                 pure (nodeId, commitIndex, lastApplied, allLogs)
-        lift $ traceWith (Tracer (traceM . N3 @Int)) n3
+        sendM $ traceWith (Tracer (traceM . N3 @Int)) n3
 
     ---------------------------------
     randomI <- uniform
-    lift
+    sendM
       . void
       . runLabelledLift
       . runRandom (mkStdGen randomI)
@@ -368,10 +368,10 @@ createAll
         forM_ faultsSeq $ \fault -> do
           case fault of
             NodeFaults nis dt -> do
-              ct <- lift getCurrentTime
-              lift $ traceWith (Tracer (traceM . N5 @Int)) (NodeRestart ct nis dt)
+              ct <- sendM getCurrentTime
+              sendM $ traceWith (Tracer (traceM . N5 @Int)) (NodeRestart ct nis dt)
               mapM_ killNode nis
-              lift $ threadDelay dt
+              sendM $ threadDelay dt
               mapM_ restartFollower nis
             NetworkFaults (dt, tb, nps) -> do
               n3 <-
@@ -383,17 +383,17 @@ createAll
                        }
                      ) -> do
                       let PersistentFun {getAllLogs, readCurrentTerm} = createPersistentFun persistent
-                      commitIndex <- lift $ readTVarIO commitIndexTVar
-                      allLogs <- lift getAllLogs
-                      term <- lift readCurrentTerm
+                      commitIndex <- sendM $ readTVarIO commitIndexTVar
+                      allLogs <- sendM getAllLogs
+                      term <- sendM readCurrentTerm
                       pure (nodeId, term, commitIndex, allLogs)
-              ct <- lift getCurrentTime
-              lift $
+              ct <- sendM getCurrentTime
+              sendM $
                 traceWith
                   (Tracer (traceM . N4 @Int))
                   (NetworkChange ct (bimap (map unNodeId) (map unNodeId) tb) dt n3)
 
-              lift $ do
+              sendM $ do
                 atomically $
                   forM_ nps $ \(a, b) -> do
                     let tv10 = snd $ fromJust $ Map.lookup (a, b) connectMap
@@ -405,15 +405,15 @@ createAll
                   forM_ nps $ \(a, b) -> do
                     let tv10 = snd $ fromJust $ Map.lookup (a, b) connectMap
                     writeTVar tv10 Connected
-        lift $ threadDelay 5
+        sendM $ threadDelay 5
 
 runCreateAll :: Env -> [NTracer Int]
 runCreateAll env@Env {randomI} =
   selectTraceEventsDynamic @_ @(NTracer Int) $
     runSimTrace $
-      runLabelledLift $
-        runRandom (mkStdGen randomI) $
-          createAll env
+        runLabelledLift $
+          runRandom (mkStdGen randomI) $
+            createAll env
 
 selectN :: NTracer Int -> Bool
 selectN (N3 _) = True
