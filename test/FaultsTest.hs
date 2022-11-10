@@ -68,7 +68,7 @@ chooseDiffTime (el, et) = picosecondsToDiffTime <$> choose r
 
 instance Arbitrary Env where
   arbitrary = do
-    nodeNums <- (\n -> n * 2 + 1) <$> choose (1 :: Int, 1)
+    nodeNums <- (\n -> n * 2 + 1) <$> choose (1 :: Int, 5)
     let nodeIds = [NodeId i | i <- [0 .. nodeNums -1]]
         netDelayRange = (0.02, 0.04)
         electionTimeRange = (0.2, 0.4)
