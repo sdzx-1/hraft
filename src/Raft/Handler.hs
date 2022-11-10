@@ -18,7 +18,7 @@ module Raft.Handler where
 import Control.Algebra
 import Control.Applicative ((<|>))
 import Control.Arrow (second)
-import Control.Carrier.Lift (runM)
+import Control.Carrier.Lift (Lift, runM)
 import Control.Carrier.Random.Gen
 import Control.Carrier.Reader
 import Control.Carrier.State.Strict
@@ -30,6 +30,7 @@ import Control.Monad
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadTime
 import Control.Monad.Class.MonadTimer
+import Control.Monad.IOSim (IOSim)
 import Control.Monad.Random (StdGen, mkStdGen)
 import qualified Data.Map as Map
 import Data.Maybe
@@ -581,17 +582,29 @@ voteAction
                   send' (MsgRequestVoteResult (RequestVoteResult currentTerm True))
                 else send' (MsgRequestVoteResult (RequestVoteResult currentTerm False))
 
--- type S s n = RandomC StdGen (Labelled HEnv (ReaderC (HEnv s n)) (Labelled HState (StateC (HState s n)) (LabelledLift Lift (Lift n) (LiftC n)))) ()
---
--- {-# SPECIALIZE follower :: S s IO #-}
--- {-# SPECIALIZE follower :: S s (IOSim n) #-}
--- {-# SPECIALIZE candidate :: S s IO #-}
--- {-# SPECIALIZE candidate :: S s (IOSim n) #-}
--- {-# SPECIALIZE leader :: S s IO #-}
--- {-# SPECIALIZE leader :: S s (IOSim n) #-}
--- {-# SPECIALIZE appendAction :: PeerNodeId -> AppendEntries s -> S s IO #-}
--- {-# SPECIALIZE appendAction :: PeerNodeId -> AppendEntries s -> S s (IOSim n) #-}
--- {-# SPECIALIZE voteAction :: PeerNodeId -> RequestVote -> S s IO #-}
--- {-# SPECIALIZE voteAction :: PeerNodeId -> RequestVote -> S s (IOSim n) #-}
--- {-# SPECIALIZE runFollow :: HState s IO -> HEnv s IO -> StdGen -> IO (HState s IO, (StdGen, ())) #-}
--- {-# SPECIALIZE runFollow :: HState s (IOSim n) -> HEnv s (IOSim n) -> StdGen -> IOSim n (HState s (IOSim n), (StdGen, ())) #-}
+type S s n =
+  RandomC
+    StdGen
+    ( Labelled
+        HEnv
+        (ReaderC (HEnv s n))
+        ( Labelled
+            HState
+            (StateC (HState s n))
+            (LabelledLift Lift n)
+        )
+    )
+    ()
+
+{-# SPECIALIZE follower :: S s IO #-}
+{-# SPECIALIZE follower :: S s (IOSim n) #-}
+{-# SPECIALIZE candidate :: S s IO #-}
+{-# SPECIALIZE candidate :: S s (IOSim n) #-}
+{-# SPECIALIZE leader :: S s IO #-}
+{-# SPECIALIZE leader :: S s (IOSim n) #-}
+{-# SPECIALIZE appendAction :: RandomNumber -> PeerNodeId -> AppendEntries s -> S s IO #-}
+{-# SPECIALIZE appendAction :: RandomNumber -> PeerNodeId -> AppendEntries s -> S s (IOSim n) #-}
+{-# SPECIALIZE voteAction :: PeerNodeId -> RequestVote -> S s IO #-}
+{-# SPECIALIZE voteAction :: PeerNodeId -> RequestVote -> S s (IOSim n) #-}
+{-# SPECIALIZE runFollow :: HState s IO -> HEnv s IO -> StdGen -> IO (HState s IO, (StdGen, ())) #-}
+{-# SPECIALIZE runFollow :: HState s (IOSim n) -> HEnv s (IOSim n) -> StdGen -> IOSim n (HState s (IOSim n), (StdGen, ())) #-}
