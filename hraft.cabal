@@ -65,6 +65,7 @@ library
                      , Channel
                      , MockLogStore
                      , Control.Tracer
+                     , Server.Server
 
     -- Modules included in this library but not exported.
     -- other-modules:
@@ -92,6 +93,7 @@ library
                     , MonadRandom
                     , fused-effects
                     , fused-effects-random
+                    , typed-protocols
 
     -- Directories containing source files.
     hs-source-dirs:   src
