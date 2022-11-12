@@ -110,12 +110,13 @@ pingPongClient =
                 pure $ Yield (ClientAgency TokIdle) MsgDone (Done TokDone ())
               else
                 pure $
-                  let go = Effect @m $ do
-                        ls <- get @[Int]
-                        case ls of
-                          [] -> pure $ Yield (ClientAgency TokTB) MsgTBEnd pingPongClient
-                          (x : xs) -> do
-                            put xs
-                            sendM $ say $ "client batch sync " ++ show x
-                            pure $ Yield (ClientAgency TokTB) (MsgTB x) go
-                   in Yield (ClientAgency TokIdle) MsgTBStart go
+                  Yield (ClientAgency TokIdle) MsgTBStart $
+                    let go f = Effect @m $ do
+                          ls <- get @[Int]
+                          case ls of
+                            [] -> pure $ Yield (ClientAgency TokTB) MsgTBEnd f
+                            (x : xs) -> do
+                              put xs
+                              sendM $ say $ "client batch sync " ++ show x
+                              pure $ Yield (ClientAgency TokTB) (MsgTB x) (go f)
+                     in go pingPongClient
