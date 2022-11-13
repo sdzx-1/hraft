@@ -66,6 +66,7 @@ library
                      , MockLogStore
                      , Control.Tracer
                      , Server.Server
+                     , Server.Type
                      , Network.TypedProtocol.Core
 
     -- Modules included in this library but not exported.
