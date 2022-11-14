@@ -65,10 +65,15 @@ library
                      , Channel
                      , MockLogStore
                      , Control.Tracer
+
                      , Server.PingPong.Server
                      , Server.PingPong.SimExample
                      , Server.PingPong.Client
                      , Server.PingPong.Type
+
+                     , Server.Login.Server
+                     , Server.Login.Type
+
                      , Network.TypedProtocol.Core
 
     -- Modules included in this library but not exported.
