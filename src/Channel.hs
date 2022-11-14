@@ -1,6 +1,7 @@
 {-# LANGUAGE LambdaCase #-}
 {-# LANGUAGE NamedFieldPuns #-}
 {-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE RecordWildCards #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 
 module Channel where
@@ -14,7 +15,7 @@ import qualified Codec.CBOR.Encoding as CBOR
 import qualified Codec.CBOR.Read as CBOR
 import qualified Codec.CBOR.Write as CBOR
 import Control.Concurrent.Class.MonadSTM
-import Control.Monad (forever)
+import Control.Monad (forever, mfilter)
 import Control.Monad.Class.MonadFork
 import Control.Monad.Class.MonadST
 import Control.Monad.Class.MonadSay
@@ -28,7 +29,10 @@ import qualified Data.ByteString.Lazy as LBS
 import qualified Data.ByteString.Lazy.Internal as LBS
   ( smallChunkSize,
   )
+import Data.Text.Internal.Lazy (smallChunkSize)
 import GHC.Natural
+import Network.Socket (Socket)
+import qualified Network.Socket.ByteString.Lazy as Socket
 
 data Channel m a = Channel
   { send :: a -> m (),
@@ -97,6 +101,15 @@ loggingChannel ident Channel {send, recv} =
         Just a -> say (show ident ++ ":recv:" ++ show a)
       return msg
 
+socketAsChannel :: Socket -> Channel IO LBS.ByteString
+socketAsChannel sock = Channel {..}
+  where
+    send :: LBS.ByteString -> IO ()
+    send = Socket.sendAll sock
+
+    recv :: IO (Maybe LBS.ByteString)
+    recv = mfilter (not . LBS.null) . pure <$> Socket.recv sock (fromIntegral smallChunkSize)
+
 createConnectedBufferedChannels ::
   MonadSTM m => Natural -> m (Channel m a, Channel m a)
 createConnectedBufferedChannels sz = do
@@ -115,7 +128,7 @@ createConnectedBufferedChannels sz = do
 data ConnectedState
   = Disconnectd
   | Connected
-  deriving Show
+  deriving (Show)
 
 createConnectedBufferedChannelsWithDelay ::
   ( MonadSTM m,

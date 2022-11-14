@@ -96,6 +96,8 @@ library
                     , MonadRandom
                     , fused-effects
                     , fused-effects-random
+                    , network
+                    , text
 
     -- Directories containing source files.
     hs-source-dirs:   src
