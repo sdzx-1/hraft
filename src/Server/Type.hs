@@ -13,6 +13,7 @@ module Server.Type where
 import Channel
 import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Encoding as CBOR
+import qualified Codec.Serialise as CBOR
 import Control.Monad.Class.MonadST (MonadST)
 import Network.TypedProtocol.Core
 
@@ -23,8 +24,8 @@ data PingPong
 
 instance Protocol PingPong where
   data Message PingPong from to where
-    MsgPing :: Message PingPong StIdle StBusy
-    MsgPong :: Message PingPong StBusy StIdle
+    MsgPing :: Int -> Message PingPong StIdle StBusy
+    MsgPong :: Int -> Message PingPong StBusy StIdle
     MsgDone :: Message PingPong StIdle StDone
 
   data Sig PingPong st where
@@ -47,16 +48,20 @@ instance ToSig PingPong StDone where
 
 encodeMsg :: Message PingPong st st' -> CBOR.Encoding
 encodeMsg x = case x of
-  MsgPing -> CBOR.encodeWord 0
-  MsgPong -> CBOR.encodeWord 1
-  MsgDone -> CBOR.encodeWord 2
+  MsgPing i ->
+    CBOR.encodeListLen 2 <> CBOR.encodeWord 0 <> CBOR.encode i
+  MsgPong i ->
+    CBOR.encodeListLen 2 <> CBOR.encodeWord 1 <> CBOR.encode i
+  MsgDone ->
+    CBOR.encodeListLen 1 <> CBOR.encodeWord 2
 
 decodeMsg :: Sig PingPong st -> CBOR.Decoder s (SomeMessage st)
 decodeMsg p = do
+  _ <- CBOR.decodeListLen
   key <- CBOR.decodeWord
   case (p, key) of
-    (SigStIdle, 0) -> pure (SomeMessage MsgPing)
-    (SigStBusy, 1) -> pure (SomeMessage MsgPong)
+    (SigStIdle, 0) -> SomeMessage . MsgPing <$> CBOR.decode
+    (SigStBusy, 1) -> SomeMessage . MsgPong <$> CBOR.decode
     (SigStIdle, 2) -> pure (SomeMessage MsgDone)
     _ -> fail "codecPingPong error"
 

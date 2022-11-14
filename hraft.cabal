@@ -66,6 +66,7 @@ library
                      , MockLogStore
                      , Control.Tracer
                      , Server.Server
+                     , Server.Client
                      , Server.Type
                      , Network.TypedProtocol.Core
 
@@ -127,6 +128,57 @@ executable hraft
 
     -- Base language which the package is written in.
     default-language: Haskell2010
+
+
+executable server
+    -- Import common warning flags.
+    import:           warnings
+
+    -- .hs or .lhs file containing the Main module.
+    main-is:          Main.hs
+
+    -- Modules included in this executable, other than Main.
+    -- other-modules:
+
+    -- LANGUAGE extensions used by modules in this package.
+    -- other-extensions:
+
+    -- Other library packages from which modules are imported.
+    build-depends:
+        base ^>=4.14.3.0,
+        hraft
+
+    -- Directories containing source files.
+    hs-source-dirs:   server
+
+    -- Base language which the package is written in.
+    default-language: Haskell2010
+
+
+executable client
+    -- Import common warning flags.
+    import:           warnings
+
+    -- .hs or .lhs file containing the Main module.
+    main-is:          Main.hs
+
+    -- Modules included in this executable, other than Main.
+    -- other-modules:
+
+    -- LANGUAGE extensions used by modules in this package.
+    -- other-extensions:
+
+    -- Other library packages from which modules are imported.
+    build-depends:
+        base ^>=4.14.3.0,
+        hraft
+
+    -- Directories containing source files.
+    hs-source-dirs:   client
+
+    -- Base language which the package is written in.
+    default-language: Haskell2010
+
 
 test-suite hraft-test
     -- Import common warning flags.
