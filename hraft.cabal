@@ -72,7 +72,11 @@ library
                      , Server.PingPong.Type
 
                      , Server.Login.Server
+                     , Server.Login.Client
                      , Server.Login.Type
+
+                     , Server.Server
+                     , Server.Client
 
                      , Network.TypedProtocol.Core
 

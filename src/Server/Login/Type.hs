@@ -1,4 +1,7 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveAnyClass #-}
+{-# HLINT ignore "Avoid lambda" #-}
+{-# LANGUAGE DeriveGeneric #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE RankNTypes #-}
@@ -6,12 +9,16 @@
 {-# OPTIONS_GHC -Wno-unrecognised-pragmas #-}
 {-# OPTIONS_GHC -Wno-unticked-promoted-constructors #-}
 
-{-# HLINT ignore "Avoid lambda" #-}
 module Server.Login.Type where
 
+import Channel (convertCborDecoder, convertCborEncoder)
 import qualified Codec.CBOR.Decoding as CBOR
 import qualified Codec.CBOR.Encoding as CBOR
+import Codec.Serialise (Serialise)
 import qualified Codec.Serialise as CBOR
+import Control.Monad.Class.MonadST (MonadST)
+import Data.Text (Text)
+import GHC.Generics (Generic)
 import Network.TypedProtocol.Core
 
 data Login req resp
@@ -66,4 +73,23 @@ decodeMsg p = do
   case (p, key) of
     (SigUnLogin, 0) -> SomeMessage . MsgLoginReq <$> CBOR.decode
     (SigVerify, 1) -> SomeMessage . MsgLoginVerifyResult <$> CBOR.decode
-    _ -> fail "codecPingPong login"
+    _ -> fail "codecLogin"
+
+loginCodec ::
+  forall m req resp.
+  ( CBOR.Serialise req,
+    CBOR.Serialise resp,
+    MonadST m
+  ) =>
+  Codec (Login req resp) m
+loginCodec =
+  Codec
+    { encode = convertCborEncoder encodeMsg,
+      decode = \sig -> convertCborDecoder (decodeMsg sig)
+    }
+
+data LoginReq = LoginReq
+  { clientId :: Text,
+    password :: Text
+  }
+  deriving (Show, Generic, Serialise)

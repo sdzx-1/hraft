@@ -1,6 +1,6 @@
 module Main where
 
-import qualified Server.PingPong.Client as C
+import qualified Server.Client as C
 
 main :: IO ()
 main = C.main
