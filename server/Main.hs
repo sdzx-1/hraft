@@ -1,4 +1,6 @@
 module Main where
 
+import qualified Server.PingPong.Server as S
+
 main :: IO ()
-main = print "nice"
+main = S.main

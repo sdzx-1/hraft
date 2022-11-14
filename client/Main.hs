@@ -1,4 +1,6 @@
 module Main where
 
+import qualified Server.PingPong.Client as C
+
 main :: IO ()
-main = print "client"
+main = C.main

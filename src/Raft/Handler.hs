@@ -18,7 +18,7 @@ module Raft.Handler where
 import Control.Algebra
 import Control.Applicative ((<|>))
 import Control.Arrow (second)
-import Control.Carrier.Lift (Lift, runM)
+import Control.Carrier.Lift (Lift)
 import Control.Carrier.Random.Gen
 import Control.Carrier.Reader
 import Control.Carrier.State.Strict

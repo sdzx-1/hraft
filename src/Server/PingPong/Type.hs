@@ -8,7 +8,7 @@
 
 {-# HLINT ignore "Avoid lambda" #-}
 
-module Server.Type where
+module Server.PingPong.Type where
 
 import Channel
 import qualified Codec.CBOR.Decoding as CBOR
