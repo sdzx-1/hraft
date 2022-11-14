@@ -21,8 +21,8 @@ module Network.TypedProtocol.Core where
 
 import Channel
 import qualified Codec.CBOR.Read as CBOR
+import Control.Effect.Error
 import Control.Effect.Labelled hiding (send)
-import Control.Monad.Class.MonadThrow
 import qualified Data.ByteString.Lazy as LBS
 import Data.Kind
 import GHC.TypeLits (ErrorMessage (..), TypeError)
@@ -102,7 +102,7 @@ await = SAwait
 
 data SDriver ps dstate m = SDriver
   { sendMessage :: forall (st :: ps) (st' :: ps). Message ps st st' -> m (),
-    recvMessage :: forall (st :: ps). Sig ps st -> dstate -> m (SomeMessage st, dstate),
+    recvMessage :: forall (st :: ps). Sig ps st -> dstate -> m (Either CBOR.DeserialiseFailure (SomeMessage st, dstate)),
     startDState :: dstate
   }
 
@@ -119,7 +119,7 @@ data Codec ps m = Codec
 
 driverSimple ::
   forall ps m.
-  (MonadThrow m, Exception CBOR.DeserialiseFailure) =>
+  Monad m =>
   Codec ps m ->
   Channel m LBS.ByteString ->
   SDriver ps (Maybe LBS.ByteString) m
@@ -137,20 +137,16 @@ driverSimple Codec {encode, decode} channel@Channel {send} =
       forall (st :: ps).
       Sig ps st ->
       Maybe LBS.ByteString ->
-      m (SomeMessage st, Maybe LBS.ByteString)
+      m (Either CBOR.DeserialiseFailure (SomeMessage st, Maybe LBS.ByteString))
     recvMessage stok trailing = do
       decoder <- decode stok
-      result <- runDecoderWithChannel channel trailing decoder
-      case result of
-        Right x@(SomeMessage _, _trailing') -> do
-          return x
-        Left failure ->
-          throwIO failure
+      runDecoderWithChannel channel trailing decoder
 
 runPeerWithDriver ::
   forall ps (st :: ps) (r :: Role) dstate m n sig a.
   ( Functor n,
     ToSig ps st,
+    Has (Error CBOR.DeserialiseFailure) sig m,
     HasLabelledLift n sig m
   ) =>
   SDriver ps dstate n ->
@@ -167,5 +163,7 @@ runPeerWithDriver SDriver {sendMessage, recvMessage} =
       sendM $ sendMessage msg
       go dstate k
     go dstate (SAwait k) = do
-      (SomeMessage msg, dstate') <- sendM $ recvMessage toSig dstate
-      go dstate' (k msg)
+      res <- sendM $ recvMessage toSig dstate
+      case res of
+        Left df -> throwError df
+        Right (SomeMessage msg, dstate') -> go dstate' (k msg)
