@@ -49,33 +49,37 @@
 -- >       eventTracer = contramap eventToText tracer
 -- >   actionWithTrace eventTracer
 module Control.Tracer
-  ( Tracer (..),
-    traceWith,
+  ( Tracer(..)
+  , traceWith
+  ,
 
     -- * Simple tracers
-    nullTracer,
-    stdoutTracer,
-    debugTracer,
+    nullTracer
+  , stdoutTracer
+  , debugTracer
+  ,
 
     -- * Transforming tracers
-    natTracer,
-    contramapM,
-    condTracing,
-    condTracingM,
-    showTracing,
-    traceTraversable,
-    traceAll,
+    natTracer
+  , contramapM
+  , condTracing
+  , condTracingM
+  , showTracing
+  , traceTraversable
+  , traceAll
+  ,
 
     -- * Re-export of Contravariant
-    Contravariant (..),
-  )
-where
+    Contravariant(..)
+  ) where
 
-import Control.Monad (when, (>=>))
-import Control.Monad.IO.Class (MonadIO (..))
-import Data.Foldable (traverse_)
-import Data.Functor.Contravariant (Contravariant (..))
-import Debug.Trace (traceM)
+import           Control.Monad                  ( (>=>)
+                                                , when
+                                                )
+import           Control.Monad.IO.Class         ( MonadIO(..) )
+import           Data.Foldable                  ( traverse_ )
+import           Data.Functor.Contravariant     ( Contravariant(..) )
+import           Debug.Trace                    ( traceM )
 
 -- | This type describes some effect in @m@ which depends upon some value of
 -- type @a@, for which the /output value/ is not of interest (only the effects).
@@ -118,7 +122,7 @@ instance Applicative m => Semigroup (Tracer m s) where
 
 instance Applicative m => Monoid (Tracer m s) where
   mappend = (<>)
-  mempty = nullTracer
+  mempty  = nullTracer
 
 -- | Alias for 'runTracer'. Traces the given value by way of the 'Tracer'.
 traceWith :: Tracer m a -> a -> m ()
@@ -135,11 +139,7 @@ nullTracer = Tracer $ \_ -> pure ()
 -- arrow" (see Control.Arrow from base for further reading, but it's not
 -- so important to know the special name). This is basically monadic bind in
 -- front of (to the left of) the tracer's effect.
-contramapM ::
-  Monad m =>
-  (a -> m b) ->
-  Tracer m b ->
-  Tracer m a
+contramapM :: Monad m => (a -> m b) -> Tracer m b -> Tracer m a
 contramapM f = mapTracer (f >=>)
 
 -- | Use a predicate to filter traced values: if it gives false then the
@@ -147,8 +147,7 @@ contramapM f = mapTracer (f >=>)
 --
 -- > condTracing p tr = Tracer $ \s -> when (p s) (traceWith tr s)
 condTracing :: (Monad m) => (a -> Bool) -> Tracer m a -> Tracer m a
-condTracing p tr = Tracer $ \s ->
-  when (p s) (traceWith tr s)
+condTracing p tr = Tracer $ \s -> when (p s) (traceWith tr s)
 
 -- | Like 'condTracing' but the "predicate" can do effects.
 condTracingM :: (Monad m) => m (a -> Bool) -> Tracer m a -> Tracer m a
@@ -156,32 +155,20 @@ condTracingM activeP tr = Tracer $ \s -> do
   active <- activeP
   when (active s) (traceWith tr s)
 
-traceTraversable ::
-  (Applicative m, Foldable t) =>
-  Tracer m a ->
-  Tracer m (t a)
+traceTraversable :: (Applicative m, Foldable t) => Tracer m a -> Tracer m (t a)
 traceTraversable = mapTracer traverse_
 
-traceAll ::
-  (Applicative m, Traversable t) =>
-  (b -> t a) ->
-  Tracer m a ->
-  Tracer m b
+traceAll
+  :: (Applicative m, Traversable t) => (b -> t a) -> Tracer m a -> Tracer m b
 traceAll f = contramap f . traceTraversable
 
-mapTracer ::
-  ((a -> m ()) -> b -> n ()) ->
-  Tracer m a ->
-  Tracer n b
+mapTracer :: ((a -> m ()) -> b -> n ()) -> Tracer m a -> Tracer n b
 mapTracer f (Tracer tr) = Tracer (f tr)
 
 -- | Use a natural transformation to change the monad. This is useful, for
 -- instance, to use concrete IO tracers in monad transformer stacks that have
 -- IO as their base.
-natTracer ::
-  (forall x. m x -> n x) ->
-  Tracer m a ->
-  Tracer n a
+natTracer :: (forall x . m x -> n x) -> Tracer m a -> Tracer n a
 natTracer f = mapTracer (f .)
 
 -- | Trace strings to stdout. Output could be jumbled when this is used from
