@@ -94,6 +94,10 @@ await
   -> Peer ps r (st :: ps) m a
 await = Await
 
+data PeerError = SerialiseError CBOR.DeserialiseFailure
+               | ConnectedError IOError
+               deriving (Show)
+
 data Driver ps dstate m = Driver
   { sendMessage :: forall (st :: ps) (st' :: ps) . Message ps st st' -> m ()
   , recvMessage
@@ -134,10 +138,6 @@ driverSimple channel@Channel { send } = Driver { sendMessage
     decoder <- decode' stok
     runDecoderWithChannel channel trailing decoder
 
-data PeerError = SerialiseError CBOR.DeserialiseFailure
-               | ConnectedError IOError
-               deriving (Show)
-
 runPeerWithDriver
   :: forall ps (st :: ps) (r :: Role) m n sig a
    . ( ToSig ps st
@@ -169,8 +169,9 @@ runPeerWithDriver channel =
           Right _  -> pure ()
         go dstate k
       go dstate (Await k) = do
-        res <- sendM $ recvMessage toSig dstate
+        res <- sendM $ try @_ @IOError $ recvMessage toSig dstate
         case res of
-          Left  df                         -> throwError (SerialiseError df)
-          Right (SomeMessage msg, dstate') -> go dstate' (k msg)
+          Left  ie -> throwError (ConnectedError ie)
+          Right (Left df) -> throwError (SerialiseError df)
+          Right (Right (SomeMessage msg, dstate')) -> go dstate' (k msg)
   in  flip go
