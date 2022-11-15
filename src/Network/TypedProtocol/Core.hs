@@ -121,7 +121,6 @@ data Driver ps dstate m = Driver
        . Sig ps st
       -> dstate
       -> m (Either CBOR.DeserialiseFailure (SomeMessage st, dstate))
-  , startDState :: dstate
   }
 
 driverSimple
@@ -129,10 +128,7 @@ driverSimple
    . (Protocol ps, Monad m, MonadST m)
   => Channel m LBS.ByteString
   -> Driver ps (Maybe LBS.ByteString) m
-driverSimple channel@Channel { send } = Driver { sendMessage
-                                               , recvMessage
-                                               , startDState = Nothing
-                                               }
+driverSimple channel@Channel { send } = Driver { sendMessage, recvMessage }
  where
   encode' = convertCborEncoder encode
   decode' = \sig -> convertCborDecoder (decode sig)
