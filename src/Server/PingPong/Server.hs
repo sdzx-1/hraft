@@ -17,29 +17,28 @@
 
 module Server.PingPong.Server where
 
-import Control.Carrier.State.Strict
-import Control.Effect.Labelled
-import Control.Monad.Class.MonadSay
-import Control.Monad.Class.MonadTime
-import Network.TypedProtocol.Core
-import Server.PingPong.Type
+import           Control.Carrier.State.Strict
+import           Control.Effect.Labelled
+import           Control.Monad.Class.MonadSay
+import           Control.Monad.Class.MonadTime
+import           Network.TypedProtocol.Core
+import           Server.PingPong.Type
 
-ppServer ::
-  forall m n sig.
-  ( Monad n,
-    MonadSay n,
-    MonadTime n,
-    Has (State Int) sig m,
-    HasLabelledLift n sig m
-  ) =>
-  SPeer PingPong Server StIdle m ()
+ppServer
+  :: forall m n sig
+   . ( Monad n
+     , MonadSay n
+     , MonadTime n
+     , Has (State Int) sig m
+     , HasLabelledLift n sig m
+     )
+  => Peer PingPong Server StIdle m ()
 ppServer = await $ \case
-  MsgPing i -> SEffect $ do
+  MsgPing i -> effect $ do
     modify (+ i)
     sendM $ say $ "s MsgPing " ++ show i
     i' <- get @Int
-    pure $
-      yield (MsgPong i') ppServer
-  MsgDone -> SEffect $ do
+    pure $ yield (MsgPong i') ppServer
+  MsgDone -> Effect $ do
     sendM $ say "server done"
     pure $ done ()
