@@ -31,20 +31,17 @@ import qualified Server.PingPong.Client        as PingPong
 
 main :: IO ()
 main = runTCPClient "127.0.0.1" "3000" $ \sc -> do
-    res <- runLabelledLift . runError @PeerError . runError @String $ do
-        userId <- sendM $ do
-            putStrLn "input userId"
-            T.pack <$> getLine
-        pw <- sendM $ do
-            putStrLn "input password"
-            T.pack <$> getLine
-        let loginChannel = socketAsChannel sc
-        (b, st) <- runPeerWithDriver loginChannel
-                                     (Login.ppClient userId pw)
-                                     Nothing
-        unless b $ throwError "login failed"
-        let pingPongChannel = socketAsChannel sc
-        runPeerWithDriver pingPongChannel PingPong.ppClient st
+    res <-
+        runLabelledLift . runPeer (socketAsChannel sc) . runError @String $ do
+            userId <- sendM $ do
+                putStrLn "input userId"
+                T.pack <$> getLine
+            pw <- sendM $ do
+                putStrLn "input password"
+                T.pack <$> getLine
+            b <- evalPeer (Login.ppClient userId pw)
+            unless b $ throwError "login failed"
+            evalPeer PingPong.ppClient
     print res
 
 runTCPClient :: HostName -> ServiceName -> (Socket -> IO a) -> IO a

@@ -27,8 +27,24 @@ import           Channel
 import qualified Codec.CBOR.Decoding           as CBOR
 import qualified Codec.CBOR.Encoding           as CBOR
 import qualified Codec.CBOR.Read               as CBOR
+import           Control.Carrier.Error.Either   ( ErrorC
+                                                , runError
+                                                )
+import           Control.Carrier.Reader         ( ReaderC
+                                                , runReader
+                                                )
+import           Control.Carrier.State.Strict   ( StateC
+                                                , runState
+                                                )
 import           Control.Effect.Error
 import           Control.Effect.Labelled hiding ( send )
+import           Control.Effect.Reader          ( Reader )
+import qualified Control.Effect.Reader.Labelled
+                                               as L
+import           Control.Effect.State           ( State
+                                                , get
+                                                , put
+                                                )
 import           Control.Monad.Class.MonadST    ( MonadST )
 import           Control.Monad.Class.MonadThrow
 import qualified Data.ByteString.Lazy          as LBS
@@ -138,7 +154,24 @@ driverSimple channel@Channel { send } = Driver { sendMessage
     decoder <- decode' stok
     runDecoderWithChannel channel trailing decoder
 
-runPeerWithDriver
+newtype PeerEnv n = PeerEnv {peerChannel :: Channel n LBS.ByteString}
+newtype PeerState = PeerState {unUsedByteString :: Maybe LBS.ByteString} deriving (Show)
+
+
+runPeer
+  :: Channel n LBS.ByteString
+  -> ErrorC
+       PeerError
+       (StateC PeerState (Labelled PeerEnv (ReaderC (PeerEnv n)) m))
+       a
+  -> m (PeerState, Either PeerError a)
+runPeer a =
+  runReader (PeerEnv a)
+    . runLabelled @PeerEnv
+    . runState (PeerState Nothing)
+    . runError @PeerError
+
+evalPeer
   :: forall ps (st :: ps) (r :: Role) m n sig a
    . ( ToSig ps st
      , Protocol ps
@@ -147,13 +180,14 @@ runPeerWithDriver
      , MonadCatch n
      , HasLabelledLift n sig m
      , Has (Error PeerError) sig m
+     , Has (State PeerState) sig m
+     , HasLabelled PeerEnv (Reader (PeerEnv n)) sig m
      )
-  => Channel n LBS.ByteString
-  -> Peer ps r st m a
-  -> Maybe LBS.ByteString
-  -> m (a, Maybe LBS.ByteString)
-runPeerWithDriver channel =
-  let Driver { sendMessage, recvMessage } = driverSimple @ps @n channel
+  => Peer ps r st m a
+  -> m a
+evalPeer peer = do
+  PeerEnv { peerChannel } <- L.ask @PeerEnv
+  let Driver { sendMessage, recvMessage } = driverSimple @ps @n peerChannel
       go
         :: forall st'
          . (ToSig ps st')
@@ -174,4 +208,7 @@ runPeerWithDriver channel =
           Left  ie -> throwError (ConnectedError ie)
           Right (Left df) -> throwError (SerialiseError df)
           Right (Right (SomeMessage msg, dstate')) -> go dstate' (k msg)
-  in  flip go
+  PeerState { unUsedByteString } <- get @PeerState
+  (res, newUnUsedByteString)     <- go unUsedByteString peer
+  put (PeerState newUnUsedByteString)
+  pure res

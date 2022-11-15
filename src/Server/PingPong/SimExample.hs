@@ -4,7 +4,6 @@ module Server.PingPong.SimExample where
 
 import           Channel                        ( createConnectedBufferedChannels
                                                 )
-import           Control.Carrier.Error.Either
 import           Control.Carrier.State.Strict
 import           Control.Effect.Labelled
 import           Control.Monad                  ( void )
@@ -13,8 +12,8 @@ import           Control.Monad.Class.MonadTimer
 import           Control.Monad.IOSim            ( runSimTrace
                                                 , selectTraceEventsSay
                                                 )
-import           Network.TypedProtocol.Core     ( PeerError
-                                                , runPeerWithDriver
+import           Network.TypedProtocol.Core     ( evalPeer
+                                                , runPeer
                                                 )
 import           Server.PingPong.Client         ( ppClient )
 import           Server.PingPong.Server         ( ppServer )
@@ -30,14 +29,8 @@ foo = selectTraceEventsSay $ runSimTrace $ do
     . void
     . runLabelledLift
     . runState @Int 0
-    . runError @PeerError
-    $ runPeerWithDriver sc ppServer Nothing
+    . runPeer sc
+    $ evalPeer ppServer
 
-  void
-    . forkIO
-    . void
-    . runLabelledLift
-    . runState @Int 0
-    . runError @PeerError
-    $ runPeerWithDriver cc ppClient Nothing
+  void . forkIO . void . runLabelledLift . runPeer cc $ evalPeer ppClient
   threadDelay 10

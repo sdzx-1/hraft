@@ -19,7 +19,6 @@
 module Server.Server where
 
 import           Channel                        ( socketAsChannel )
-import qualified Codec.CBOR.Read               as CBOR
 import           Control.Carrier.Error.Either   ( runError
                                                 , throwError
                                                 )
@@ -39,6 +38,7 @@ import           Network.TypedProtocol.Core
 import qualified Server.Login.Server           as Login
 import qualified Server.PingPong.Server        as PingPong
 
+
 main :: IO ()
 main = runTCPServer Nothing "3000" foo
   where
@@ -47,18 +47,16 @@ main = runTCPServer Nothing "3000" foo
             . runLabelledLift
             . runReader @(Map Text Text) (Map.fromList [("sdzx", "1")])
             . runState @Int 0
-            . runError @PeerError
+            . runPeer (socketAsChannel sc)
             . runError @()
             $ do
-                  let loginChannel = socketAsChannel sc
-                  (m_userId, st) <- runPeerWithDriver loginChannel
-                                                      Login.ppServer
-                                                      Nothing
+                  m_userId <- evalPeer Login.ppServer
                   case m_userId of
-                      Nothing      -> throwError ()
+                      Nothing -> do
+                          sendM $ putStrLn "login failed, terminate connect."
+                          throwError ()
                       Just _userId -> do
-                          let pingPongChannel = socketAsChannel sc
-                          runPeerWithDriver pingPongChannel PingPong.ppServer st
+                          evalPeer PingPong.ppServer
 
 runTCPServer :: Maybe HostName -> ServiceName -> (Socket -> IO a) -> IO a
 runTCPServer mhost port server = withSocketsDo $ do
