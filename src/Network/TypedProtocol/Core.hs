@@ -30,6 +30,7 @@ import qualified Codec.CBOR.Read               as CBOR
 import           Control.Effect.Error
 import           Control.Effect.Labelled hiding ( send )
 import           Control.Monad.Class.MonadST    ( MonadST )
+import           Control.Monad.Class.MonadThrow
 import qualified Data.ByteString.Lazy          as LBS
 import           Data.Kind
 import           GHC.TypeLits                   ( ErrorMessage(..)
@@ -133,14 +134,19 @@ driverSimple channel@Channel { send } = Driver { sendMessage
     decoder <- decode' stok
     runDecoderWithChannel channel trailing decoder
 
+data PeerError = SerialiseError CBOR.DeserialiseFailure
+               | ConnectedError IOError
+               deriving (Show)
+
 runPeerWithDriver
   :: forall ps (st :: ps) (r :: Role) m n sig a
    . ( ToSig ps st
      , Protocol ps
      , Monad n
      , MonadST n
+     , MonadCatch n
      , HasLabelledLift n sig m
-     , Has (Error CBOR.DeserialiseFailure) sig m
+     , Has (Error PeerError) sig m
      )
   => Channel n LBS.ByteString
   -> Peer ps r st m a
@@ -157,11 +163,14 @@ runPeerWithDriver channel =
       go dstate (Effect k   ) = k >>= go dstate
       go dstate (Done   x   ) = return (x, dstate)
       go dstate (Yield msg k) = do
-        sendM $ sendMessage msg
+        sr <- sendM $ try @_ @IOError $ sendMessage msg
+        case sr of
+          Left  ie -> throwError (ConnectedError ie)
+          Right _  -> pure ()
         go dstate k
       go dstate (Await k) = do
         res <- sendM $ recvMessage toSig dstate
         case res of
-          Left  df                         -> throwError df
+          Left  df                         -> throwError (SerialiseError df)
           Right (SomeMessage msg, dstate') -> go dstate' (k msg)
   in  flip go

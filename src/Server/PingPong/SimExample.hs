@@ -4,7 +4,6 @@ module Server.PingPong.SimExample where
 
 import           Channel                        ( createConnectedBufferedChannels
                                                 )
-import qualified Codec.CBOR.Read               as CBOR
 import           Control.Carrier.Error.Either
 import           Control.Carrier.State.Strict
 import           Control.Effect.Labelled
@@ -14,7 +13,9 @@ import           Control.Monad.Class.MonadTimer
 import           Control.Monad.IOSim            ( runSimTrace
                                                 , selectTraceEventsSay
                                                 )
-import           Network.TypedProtocol.Core     ( runPeerWithDriver )
+import           Network.TypedProtocol.Core     ( PeerError
+                                                , runPeerWithDriver
+                                                )
 import           Server.PingPong.Client         ( ppClient )
 import           Server.PingPong.Server         ( ppServer )
 
@@ -29,7 +30,7 @@ foo = selectTraceEventsSay $ runSimTrace $ do
     . void
     . runLabelledLift
     . runState @Int 0
-    . runError @CBOR.DeserialiseFailure
+    . runError @PeerError
     $ runPeerWithDriver sc ppServer Nothing
 
   void
@@ -37,6 +38,6 @@ foo = selectTraceEventsSay $ runSimTrace $ do
     . void
     . runLabelledLift
     . runState @Int 0
-    . runError @CBOR.DeserialiseFailure
+    . runError @PeerError
     $ runPeerWithDriver cc ppClient Nothing
   threadDelay 10

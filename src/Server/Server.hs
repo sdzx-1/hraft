@@ -47,7 +47,7 @@ main = runTCPServer Nothing "3000" foo
             . runLabelledLift
             . runReader @(Map Text Text) (Map.fromList [("sdzx", "1")])
             . runState @Int 0
-            . runError @CBOR.DeserialiseFailure
+            . runError @PeerError
             . runError @()
             $ do
                   let loginChannel = socketAsChannel sc
