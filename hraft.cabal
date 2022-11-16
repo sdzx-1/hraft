@@ -91,7 +91,7 @@ library
     -- other-extensions:
 
     -- Other library packages from which modules are imported.
-    build-depends:    base ^>=4.14.3.0
+    build-depends:    base >=4.14.3.0
                     , containers >= 0.6
                     , optics
                     , serialise
@@ -136,7 +136,7 @@ executable hraft
 
     -- Other library packages from which modules are imported.
     build-depends:
-        base ^>=4.14.3.0,
+        base >=4.14.3.0,
         hraft
 
     -- Directories containing source files.
@@ -161,7 +161,7 @@ executable server
 
     -- Other library packages from which modules are imported.
     build-depends:
-        base ^>=4.14.3.0,
+        base >=4.14.3.0,
         hraft
 
     -- Directories containing source files.
@@ -186,7 +186,7 @@ executable client
 
     -- Other library packages from which modules are imported.
     build-depends:
-        base ^>=4.14.3.0,
+        base >=4.14.3.0,
         hraft
 
     -- Directories containing source files.
@@ -222,7 +222,7 @@ test-suite hraft-test
 
     -- Test dependencies.
     build-depends:
-        base ^>=4.14.3.0,
+        base >=4.14.3.0,
         QuickCheck,
         cborg,
         bytestring >= 0.10,

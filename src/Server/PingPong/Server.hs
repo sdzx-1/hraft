@@ -17,12 +17,12 @@
 
 module Server.PingPong.Server where
 
-import           Control.Carrier.State.Strict
-import           Control.Effect.Labelled
-import           Control.Monad.Class.MonadSay
-import           Control.Monad.Class.MonadTime
-import           Network.TypedProtocol.Core
-import           Server.PingPong.Type
+import Control.Carrier.State.Strict
+import Control.Effect.Labelled
+import Control.Monad.Class.MonadSay
+import Control.Monad.Class.MonadTime
+import Network.TypedProtocol.Core
+import Server.PingPong.Type
 
 ppServer
   :: forall m n sig

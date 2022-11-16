@@ -17,22 +17,27 @@
 
 module Server.PingPong.Client where
 
-import           Control.Effect.Labelled
-import           Control.Monad.Class.MonadSay
-import           Control.Monad.Class.MonadTime
-import           Control.Monad.Class.MonadTimer
-import           Network.TypedProtocol.Core
-import           Server.PingPong.Type
+import Control.Effect.Labelled
+import Control.Monad.Class.MonadSay
+import Control.Monad.Class.MonadTime
+import Control.Monad.Class.MonadTimer
+import Network.TypedProtocol.Core
+import Server.PingPong.Type
 
 ppClient
   :: forall n sig m
-   . (MonadTime n, MonadSay n, HasLabelledLift n sig m, MonadDelay n)
+   . ( MonadTime n
+     , MonadSay n
+     , MonadDelay n
+     , HasLabelledLift n sig m
+     )
   => Peer PingPong Client StIdle m ()
-ppClient = yield (MsgPing 1) $ await $ \case
-  MsgPong i -> effect $ do
-    lift $ say $ "c MsgPong " ++ show i
-    if i > 3
-      then do
-        lift $ say "client done"
-        pure $ yield MsgDone (done ())
-      else pure ppClient
+ppClient = yield (MsgPing 1) $
+  await $ \case
+    MsgPong i -> effect $ do
+      lift $ say $ "c MsgPong " ++ show i
+      if i > 3
+        then do
+          lift $ say "client done"
+          pure $ yield MsgDone (done ())
+        else pure ppClient
