@@ -15,13 +15,11 @@ import           Server.OperateReq.Type
 
 client
     :: (MonadSay n, Has Random sig m, HasLabelledLift n sig m)
-    => Peer (Operate Int Int) Client Idle m (Maybe NodeId)
-client = effect $ do
-    ri <- uniformR (0, 100)
-    if ri > 89
-        then pure $ yield ClientTerminate $ done Nothing
-        else pure $ yield (SendOp ri) $ await $ \case
-            SendResult i -> effect $ do
-                sendM $ say $ show i
-                pure client
-            MasterChange nid -> done (Just nid)
+    => Int
+    -> Peer (Operate Int Int) Client Idle m (Maybe NodeId)
+client reqI = yield (SendOp reqI) $ await $ \case
+    SendResult i -> effect $ do
+        sendM $ say $ "client recv " ++ show i
+        sendM $ say "client done"
+        pure (done Nothing)
+    MasterChange nid -> done (Just nid)

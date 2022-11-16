@@ -25,9 +25,8 @@ data Operate req resp
 instance (Serialise req, Serialise resp) => Protocol (Operate req resp) where
     data Message (Operate req resp) from to where
         SendOp ::req -> Message (Operate req resp) Idle Busy
-        SendResult ::resp -> Message (Operate req resp) Busy Idle
+        SendResult ::resp -> Message (Operate req resp) Busy CDone
         MasterChange ::NodeId -> Message (Operate req resp) Busy SDone
-        ClientTerminate ::Message (Operate req resp) Idle CDone
     
     data Sig (Operate req resp) st where
         SigIdle ::Sig (Operate req resp) Idle
@@ -46,7 +45,6 @@ instance (Serialise req, Serialise resp) => Protocol (Operate req resp) where
             CBOR.encodeListLen 2 <> CBOR.encodeWord 1 <> CBOR.encode resp
         MasterChange nid ->
             CBOR.encodeListLen 2 <> CBOR.encodeWord 2 <> CBOR.encode nid
-        ClientTerminate -> CBOR.encodeListLen 1 <> CBOR.encodeWord 3
 
     decode p = do
         _   <- CBOR.decodeListLen
@@ -55,7 +53,6 @@ instance (Serialise req, Serialise resp) => Protocol (Operate req resp) where
             (SigIdle, 0) -> SomeMessage . SendOp <$> CBOR.decode
             (SigBusy, 1) -> SomeMessage . SendResult <$> CBOR.decode
             (SigBusy, 2) -> SomeMessage . MasterChange <$> CBOR.decode
-            (SigIdle, 3) -> pure $ SomeMessage ClientTerminate
             _            -> fail "codecLogin"
 
 instance ToSig (Operate req resp) Idle where

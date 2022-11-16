@@ -22,7 +22,7 @@ import           Server.OperateReq.Client       ( client )
 import           Server.OperateReq.Server       ( server )
 
 -- >>> foo
--- ["recv 46","47","recv 21","22","recv 83","84","recv 12","13","recv 15","16","recv 44","45","recv 21","22","recv 6","7","recv 82","83","recv 14","15"]
+-- ["server recv 10","server resp 11","server done","client recv 11","client done"]
 foo :: [String]
 foo = selectTraceEventsSay $ runSimTrace $ do
     (cc, sc) <- createConnectedBufferedChannels 100
@@ -41,5 +41,5 @@ foo = selectTraceEventsSay $ runSimTrace $ do
         . runLabelledLift
         . runRandom (mkStdGen 10)
         . runPeer cc 3
-        $ evalPeer client
+        $ evalPeer (client 10)
     threadDelay 10
