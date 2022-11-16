@@ -29,8 +29,8 @@ foo = selectTraceEventsSay $ runSimTrace $ do
     . void
     . runLabelledLift
     . runState @Int 0
-    . runPeer sc
+    . runPeer sc 3
     $ evalPeer ppServer
 
-  void . forkIO . void . runLabelledLift . runPeer cc $ evalPeer ppClient
+  void . forkIO . void . runLabelledLift . runPeer cc 3 $ evalPeer ppClient
   threadDelay 10

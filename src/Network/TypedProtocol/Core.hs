@@ -47,6 +47,8 @@ import           Control.Effect.State           ( State
                                                 )
 import           Control.Monad.Class.MonadST    ( MonadST )
 import           Control.Monad.Class.MonadThrow
+import           Control.Monad.Class.MonadTime
+import           Control.Monad.Class.MonadTimer
 import qualified Data.ByteString.Lazy          as LBS
 import           Data.Kind
 import           GHC.TypeLits                   ( ErrorMessage(..)
@@ -112,6 +114,7 @@ await = Await
 
 data PeerError = SerialiseError CBOR.DeserialiseFailure
                | ConnectedError IOError
+               | RecvMessageTimout
                deriving (Show)
 
 data Driver ps dstate m = Driver
@@ -150,19 +153,23 @@ driverSimple channel@Channel { send } = Driver { sendMessage, recvMessage }
     decoder <- decode' stok
     runDecoderWithChannel channel trailing decoder
 
-newtype PeerEnv n = PeerEnv {peerChannel :: Channel n LBS.ByteString}
+data PeerEnv n = PeerEnv
+  { peerChannel     :: Channel n LBS.ByteString
+  , recvTimeoutSize :: DiffTime
+  }
 newtype PeerState = PeerState {unUsedByteString :: Maybe LBS.ByteString} deriving (Show)
 
 
 runPeer
   :: Channel n LBS.ByteString
+  -> DiffTime
   -> ErrorC
        PeerError
        (StateC PeerState (Labelled PeerEnv (ReaderC (PeerEnv n)) m))
        a
   -> m (PeerState, Either PeerError a)
-runPeer a =
-  runReader (PeerEnv a)
+runPeer a dt =
+  runReader (PeerEnv a dt)
     . runLabelled @PeerEnv
     . runState (PeerState Nothing)
     . runError @PeerError
@@ -173,6 +180,7 @@ evalPeer
      , Protocol ps
      , Monad n
      , MonadST n
+     , MonadTimer n
      , MonadCatch n
      , HasLabelledLift n sig m
      , Has (Error PeerError) sig m
@@ -182,28 +190,32 @@ evalPeer
   => Peer ps r st m a
   -> m a
 evalPeer peer = do
-  PeerEnv { peerChannel } <- L.ask @PeerEnv
-  let Driver { sendMessage, recvMessage } = driverSimple @ps @n peerChannel
-      go
-        :: forall st'
-         . (ToSig ps st')
-        => Maybe LBS.ByteString
-        -> Peer ps r st' m a
-        -> m (a, Maybe LBS.ByteString)
-      go dstate (Effect k   ) = k >>= go dstate
-      go dstate (Done   x   ) = return (x, dstate)
-      go dstate (Yield msg k) = do
-        sr <- sendM $ try @_ @IOError $ sendMessage msg
-        case sr of
-          Left  ie -> throwError (ConnectedError ie)
-          Right _  -> pure ()
-        go dstate k
-      go dstate (Await k) = do
-        res <- sendM $ try @_ @IOError $ recvMessage toSig dstate
-        case res of
-          Left  ie -> throwError (ConnectedError ie)
-          Right (Left df) -> throwError (SerialiseError df)
-          Right (Right (SomeMessage msg, dstate')) -> go dstate' (k msg)
+  PeerEnv { peerChannel, recvTimeoutSize } <- L.ask @PeerEnv
+  let
+    Driver { sendMessage, recvMessage } = driverSimple @ps @n peerChannel
+    go
+      :: forall st'
+       . (ToSig ps st')
+      => Maybe LBS.ByteString
+      -> Peer ps r st' m a
+      -> m (a, Maybe LBS.ByteString)
+    go dstate (Effect k   ) = k >>= go dstate
+    go dstate (Done   x   ) = return (x, dstate)
+    go dstate (Yield msg k) = do
+      sr <- sendM $ try @_ @IOError $ sendMessage msg
+      case sr of
+        Left  ie -> throwError (ConnectedError ie)
+        Right _  -> pure ()
+      go dstate k
+    go dstate (Await k) = do
+      res <- sendM $ try @_ @IOError $ timeout recvTimeoutSize $ recvMessage
+        toSig
+        dstate
+      case res of
+        Left  ie      -> throwError (ConnectedError ie)
+        Right Nothing -> throwError RecvMessageTimout
+        Right (Just (Left df)) -> throwError (SerialiseError df)
+        Right (Just (Right (SomeMessage msg, dstate'))) -> go dstate' (k msg)
   PeerState { unUsedByteString } <- get @PeerState
   (res, newUnUsedByteString)     <- go unUsedByteString peer
   put (PeerState newUnUsedByteString)

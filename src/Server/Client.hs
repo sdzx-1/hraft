@@ -32,7 +32,7 @@ import qualified Server.PingPong.Client        as PingPong
 main :: IO ()
 main = runTCPClient "127.0.0.1" "3000" $ \sc -> do
     res <-
-        runLabelledLift . runPeer (socketAsChannel sc) . runError @String $ do
+        runLabelledLift . runPeer (socketAsChannel sc) 3 . runError @String $ do
             userId <- sendM $ do
                 putStrLn "input userId"
                 T.pack <$> getLine

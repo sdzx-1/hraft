@@ -47,7 +47,7 @@ main = runTCPServer Nothing "3000" foo
             . runLabelledLift
             . runReader @(Map Text Text) (Map.fromList [("sdzx", "1")])
             . runState @Int 0
-            . runPeer (socketAsChannel sc)
+            . runPeer (socketAsChannel sc) 3
             . runError @()
             $ do
                   m_userId <- evalPeer Login.ppServer
