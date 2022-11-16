@@ -19,7 +19,7 @@ client
     -> Peer (Operate Int Int) Client Idle m (Maybe NodeId)
 client reqI = yield (SendOp reqI) $ await $ \case
     SendResult i -> effect $ do
-        sendM $ say $ "client recv " ++ show i
-        sendM $ say "client done"
+        lift $ say $ "client recv " ++ show i
+        lift $ say "client done"
         pure (done Nothing)
     MasterChange nid -> done (Just nid)

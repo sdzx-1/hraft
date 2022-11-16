@@ -30,9 +30,9 @@ ppClient
   => Peer PingPong Client StIdle m ()
 ppClient = yield (MsgPing 1) $ await $ \case
   MsgPong i -> effect $ do
-    sendM $ say $ "c MsgPong " ++ show i
+    lift $ say $ "c MsgPong " ++ show i
     if i > 3
       then do
-        sendM $ say "client done"
+        lift $ say "client done"
         pure $ yield MsgDone (done ())
       else pure ppClient

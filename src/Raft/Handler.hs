@@ -74,7 +74,7 @@ follower = do
     R.ask @HEnv
   HState { electionTimeout } <- S.get @HState
   val                        <-
-    sendM
+    lift
     $   atomically
     $   (Left <$> waitTimeout electionTimeout)
     <|> (Right <$> readTQueue peersRecvQueue)
@@ -85,7 +85,7 @@ follower = do
     Right (peerNodeId, msg) -> do
       timeTracerWith (FollowerRecvMsg (peerNodeId, msg))
       send'       <- getPeerSendFun peerNodeId
-      currentTerm <- sendM readCurrentTerm
+      currentTerm <- lift readCurrentTerm
       case msg of
         MsgAppendEntries ranNum appEnt@AppendEntries { term } -> do
           case compare term currentTerm of
@@ -100,7 +100,7 @@ follower = do
               appendAction ranNum peerNodeId appEnt
             GT -> do
               updateTimeout'
-              sendM $ writeCurrentTermAndVotedFor term Nothing
+              lift $ writeCurrentTermAndVotedFor term Nothing
               appendAction ranNum peerNodeId appEnt
           follower
         MsgRequestVote reqVote@RequestVote { term } -> do
@@ -109,7 +109,7 @@ follower = do
               send' (MsgRequestVoteResult (RequestVoteResult currentTerm False))
             EQ -> voteAction peerNodeId reqVote
             GT -> do
-              sendM $ writeCurrentTermAndVotedFor term Nothing
+              lift $ writeCurrentTermAndVotedFor term Nothing
               voteAction peerNodeId reqVote
           follower
         MsgAppendEntriesResult _ _ -> follower
@@ -129,18 +129,18 @@ candidate
 candidate = do
   HEnv { persistentFun = PersistentFun { readCurrentTerm, writeCurrentTermAndVotedFor, persisLastLogIndexAndTerm }, nodeId, peerInfos, electionTimeRange } <-
     R.ask @HEnv
-  oldTerm <- sendM readCurrentTerm
-  sendM $ writeCurrentTermAndVotedFor (oldTerm + 1) (Just $ unNodeId nodeId)
+  oldTerm <- lift readCurrentTerm
+  lift $ writeCurrentTermAndVotedFor (oldTerm + 1) (Just $ unNodeId nodeId)
   timeTracerWith (CandidateNewElectionStart (oldTerm + 1))
   timeTracerWith (VotedForNode (unNodeId nodeId) (oldTerm + 1))
   randomElectionSize <- randomRDiffTime electionTimeRange
-  newTimeo           <- sendM $ newTimeout randomElectionSize
+  newTimeo           <- lift $ newTimeout randomElectionSize
   S.put @HState
     (HState { electionSize = randomElectionSize, electionTimeout = newTimeo })
   timeTracerWith (CandidateSetNewElectionSzie randomElectionSize)
   allSend     <- mapM getPeerSendFun (Map.keys peerInfos)
-  currentTerm <- sendM readCurrentTerm
-  (persisLastLogIndexVal, persisLastLogTermVal) <- sendM
+  currentTerm <- lift readCurrentTerm
+  (persisLastLogIndexVal, persisLastLogTermVal) <- lift
     persisLastLogIndexAndTerm
   timeTracerWith (CandidateSendVotoForMsgToAll (Map.keys peerInfos))
   forM_ allSend $ \send' -> do
@@ -159,7 +159,7 @@ candidate = do
     HEnv { persistentFun = PersistentFun { readCurrentTerm, writeCurrentTermAndVotedFor }, peersRecvQueue, peerInfos } <-
       R.ask @HEnv
     val <-
-      sendM
+      lift
       $   atomically
       $   (Left <$> waitTimeout electionTimeout)
       <|> (Right <$> readTQueue peersRecvQueue)
@@ -169,7 +169,7 @@ candidate = do
         candidate
       Right (peerNodeId, msg) -> do
         timeTracerWith (CandidateRecvMsg (peerNodeId, msg))
-        currentTerm <- sendM readCurrentTerm
+        currentTerm <- lift readCurrentTerm
         send'       <- getPeerSendFun peerNodeId
         case msg of
           MsgAppendEntries ranNum appEnt@AppendEntries { term } -> do
@@ -186,7 +186,7 @@ candidate = do
                 updateTimeout'
                 follower
               GT -> do
-                sendM $ writeCurrentTermAndVotedFor term Nothing
+                lift $ writeCurrentTermAndVotedFor term Nothing
                 appendAction ranNum peerNodeId appEnt
                 updateTimeout'
                 follower
@@ -201,7 +201,7 @@ candidate = do
                   (MsgRequestVoteResult (RequestVoteResult currentTerm False))
                 go voteTrueSet voteFalseSet
               GT -> do
-                sendM $ writeCurrentTermAndVotedFor term Nothing
+                lift $ writeCurrentTermAndVotedFor term Nothing
                 voteAction peerNodeId reqVote
                 updateTimeout'
                 follower
@@ -237,7 +237,7 @@ candidate = do
                     else
                       go voteTrueSet newVoteFalseSet
               GT -> do
-                sendM $ writeCurrentTermAndVotedFor term Nothing
+                lift $ writeCurrentTermAndVotedFor term Nothing
                 updateTimeout'
                 follower
           MsgAppendEntriesResult _ _ -> go voteTrueSet voteFalseSet
@@ -255,7 +255,7 @@ sendMsgAppEnt appEnt = do
   SEnv { sendFun } <- R.ask @SEnv
   ranNum           <- uniform
   put ranNum
-  sendM $ sendFun (MsgAppendEntries ranNum appEnt)
+  lift $ sendFun (MsgAppendEntries ranNum appEnt)
 
 sync
   :: ( HasLabelled SEnv (Reader (SEnv s n)) sig m
@@ -273,9 +273,9 @@ sync appEnt = do
   SState { syncingPrevLogIndex, syncingLogLength } <- get
   SEnv { nodeId, currentTerm, persistentFun, appendEntriesRpcRetryWaitTime, heartbeatWaitTime, appendEntriesResultQueue, matchIndexTVar, lastLogIndexTVar, commitIndexTVar } <-
     R.ask @SEnv
-  timeout' <- sendM $ newTimeout appendEntriesRpcRetryWaitTime
+  timeout' <- lift $ newTimeout appendEntriesRpcRetryWaitTime
   res      <-
-    sendM
+    lift
     $   atomically
     $   (Left <$> readTQueue appendEntriesResultQueue)
     <|> (Right <$> waitTimeout timeout')
@@ -291,7 +291,7 @@ sync appEnt = do
         else do
           if success
             then do
-              sendM $ atomically $ writeTVar
+              lift $ atomically $ writeTVar
                 matchIndexTVar
                 (syncingPrevLogIndex + syncingLogLength)
               let check' = do
@@ -299,16 +299,16 @@ sync appEnt = do
                     if lastLogIndex > syncingPrevLogIndex + syncingLogLength
                       then pure LastLogIndexGTSyncingParams
                       else retry
-              timeout'' <- sendM $ newTimeout heartbeatWaitTime
+              timeout'' <- lift $ newTimeout heartbeatWaitTime
               res'      <-
-                sendM
+                lift
                 $   atomically
                 $   (Left <$> check')
                 <|> (Right <$> waitTimeout timeout'')
               case res' of
                 Right _ -> do
-                  (pi', pt)   <- sendM $ persisLastLogIndexAndTerm persistentFun
-                  commitIndex <- sendM $ readTVarIO commitIndexTVar
+                  (pi', pt)   <- lift $ persisLastLogIndexAndTerm persistentFun
+                  commitIndex <- lift $ readTVarIO commitIndexTVar
                   let
                     appEnt' = AppendEntries currentTerm
                                             (unNodeId nodeId)
@@ -327,10 +327,10 @@ sync appEnt = do
                             , syncingLogLength    = 1
                             }
                     )
-                  TermWarpper newPreTerm _ <- sendM
+                  TermWarpper newPreTerm _ <- lift
                     $ readLog persistentFun newPreIndex
-                  log'        <- sendM $ readLog persistentFun (newPreIndex + 1)
-                  commitIndex <- sendM $ readTVarIO commitIndexTVar
+                  log'        <- lift $ readLog persistentFun (newPreIndex + 1)
+                  commitIndex <- lift $ readTVarIO commitIndexTVar
                   let appEnt' = AppendEntries currentTerm
                                               (unNodeId nodeId)
                                               newPreIndex
@@ -346,9 +346,9 @@ sync appEnt = do
                         , syncingLogLength    = 0
                         }
                 )
-              TermWarpper newPreTerm _ <- sendM
+              TermWarpper newPreTerm _ <- lift
                 $ readLog persistentFun newPreIndex
-              commitIndex <- sendM $ readTVarIO commitIndexTVar
+              commitIndex <- lift $ readTVarIO commitIndexTVar
               let appEnt' = AppendEntries currentTerm
                                           (unNodeId nodeId)
                                           newPreIndex
@@ -372,19 +372,19 @@ leader
 leader = do
   HEnv { nodeId, peerInfos, persistentFun = ps@PersistentFun { readCurrentTerm, persisLastLogIndexAndTerm, appendLog, writeCurrentTermAndVotedFor }, peersRecvQueue, commitIndexTVar, userLogQueue, appendEntriesRpcRetryWaitTime, heartbeatWaitTime, tracer } <-
     R.ask @HEnv
-  currentTerm <- sendM readCurrentTerm
-  (pi', pt)   <- sendM persisLastLogIndexAndTerm
-  commitIndex <- sendM $ readTVarIO commitIndexTVar
+  currentTerm <- lift readCurrentTerm
+  (pi', pt)   <- lift persisLastLogIndexAndTerm
+  commitIndex <- lift $ readTVarIO commitIndexTVar
   timeTracerWith (LeaderSendEmptyAppendEntries (Map.keys peerInfos))
   ranNum <- uniform
   let appEnt =
         AppendEntries currentTerm (unNodeId nodeId) pi' pt [] commitIndex
       msg = MsgAppendEntries ranNum appEnt
   mapM_ (getPeerSendFun >=> ($ msg)) $ Map.keys peerInfos
-  lastLogIndexTVar <- sendM $ newTVarIO pi'
+  lastLogIndexTVar <- lift $ newTVarIO pi'
   pns <- forM (Map.toList peerInfos) $ \(peerNodeId, peerInfo) -> do
-    matchIndexTVar           <- sendM $ newTVarIO 0
-    appendEntriesResultQueue <- sendM newTQueueIO
+    matchIndexTVar           <- lift $ newTVarIO 0
+    appendEntriesResultQueue <- lift newTQueueIO
     let sState = SState { syncingPrevLogIndex = pi', syncingLogLength = 0 }
         sEnv   = SEnv { nodeId
                       , peerNodeId
@@ -401,7 +401,7 @@ leader = do
                       }
     ri <- uniform
     void
-      . sendM
+      . lift
       . forkIO
       . void
       . runLabelledLift
@@ -416,25 +416,25 @@ leader = do
   let miTVars             = map (snd . snd) pns
       tmpPeersResultQueue = Map.fromList $ map (second fst) pns
 
-  cmdQueue <- sendM newTQueueIO
-  _        <- sendM $ forkIO $ cProcess ps cmdQueue commitIndexTVar miTVars 0
+  cmdQueue <- lift newTQueueIO
+  _        <- lift $ forkIO $ cProcess ps cmdQueue commitIndexTVar miTVars 0
 
   let
     stopDependProcess = do
-      sendM $ atomically $ writeTQueue cmdQueue Terminate
+      lift $ atomically $ writeTQueue cmdQueue Terminate
       forM_ (Map.elems tmpPeersResultQueue)
-        $ \tq -> sendM $ atomically (writeTQueue tq (Left Terminate))
+        $ \tq -> lift $ atomically (writeTQueue tq (Left Terminate))
 
     go = do
       mMsg <-
-        sendM
+        lift
         $   atomically
         $   (Left <$> readTQueue peersRecvQueue)
         <|> (Right <$> readTQueue userLogQueue)
       case mMsg of
         Right log' -> do
-          index <- sendM $ appendLog (TermWarpper currentTerm log')
-          sendM $ atomically $ writeTVar lastLogIndexTVar index
+          index <- lift $ appendLog (TermWarpper currentTerm log')
+          lift $ atomically $ writeTVar lastLogIndexTVar index
           go
         Left (peerNodeId, msg') -> do
           timeTracerWith (LeaderRecvMsg (peerNodeId, msg'))
@@ -453,7 +453,7 @@ leader = do
                 EQ -> error "undefined behave"
                 GT -> do
                   stopDependProcess
-                  sendM $ writeCurrentTermAndVotedFor term Nothing
+                  lift $ writeCurrentTermAndVotedFor term Nothing
                   appendAction ranNum' peerNodeId appEnt'
                   newTimeout'
                   timeTracerWith LeaderToFollowerAtAP
@@ -473,7 +473,7 @@ leader = do
                   go
                 GT -> do
                   stopDependProcess
-                  sendM $ writeCurrentTermAndVotedFor term Nothing
+                  lift $ writeCurrentTermAndVotedFor term Nothing
                   voteAction peerNodeId reqVote
                   newTimeout'
                   timeTracerWith LeaderToFollowerAtRV
@@ -484,11 +484,11 @@ leader = do
                 case compare term currentTerm of
                   LT -> go
                   EQ -> do
-                    sendM $ atomically $ writeTQueue tq (Right (ranNum', apr))
+                    lift $ atomically $ writeTQueue tq (Right (ranNum', apr))
                     go
                   GT -> do
                     stopDependProcess
-                    sendM $ writeCurrentTermAndVotedFor term Nothing
+                    lift $ writeCurrentTermAndVotedFor term Nothing
                     newTimeout'
                     follower
             MsgRequestVoteResult _ -> go
@@ -511,8 +511,8 @@ appendAction ranNum peerNodeId AppendEntries { prevLogIndex, prevLogTerm, entrie
     HEnv { persistentFun = PersistentFun { readCurrentTerm, checkAppendentries, checkEntry, appendLog, removeLogs }, commitIndexTVar } <-
       R.ask @HEnv
     send'       <- getPeerSendFun peerNodeId
-    currentTerm <- sendM readCurrentTerm
-    prevCheck   <- sendM $ checkAppendentries prevLogIndex prevLogTerm
+    currentTerm <- lift readCurrentTerm
+    prevCheck   <- lift $ checkAppendentries prevLogIndex prevLogTerm
     timeTracerWith (FollowerCheckPrevLog prevCheck)
     if not prevCheck
       then
@@ -522,21 +522,21 @@ appendAction ranNum peerNodeId AppendEntries { prevLogIndex, prevLogTerm, entrie
       else do
         let go []              = pure ()
             go k@((i, _) : es) = do
-              checkEntryResult <- sendM
+              checkEntryResult <- lift
                 $ checkEntry (prevLogIndex + i) currentTerm
               case checkEntryResult of
                 Exis -> go es
                 Null -> do
-                  mapM_ (sendM . appendLog) (snd <$> k)
-                Diff -> sendM $ do
+                  mapM_ (lift . appendLog) (snd <$> k)
+                Diff -> lift $ do
                   removeLogs (prevLogIndex + i)
                   mapM_ appendLog (snd <$> k)
         go (zip [1 ..] entries)
-        commitIndex <- sendM $ readTVarIO commitIndexTVar
+        commitIndex <- lift $ readTVarIO commitIndexTVar
         if leaderCommit > commitIndex
           then do
             let persisLastLogIndexVal = prevLogIndex + length entries
-            sendM $ atomically $ writeTVar
+            lift $ atomically $ writeTVar
               commitIndexTVar
               (min leaderCommit persisLastLogIndexVal)
             timeTracerWith
@@ -564,8 +564,8 @@ voteAction peerNodeId RequestVote { candidateId, lastLogIndex, lastLogTerm } =
     HEnv { persistentFun = PersistentFun { readCurrentTerm, readVotedFor, writeCurrentTermAndVotedFor, persisLastLogIndexAndTerm } } <-
       R.ask @HEnv
     send'       <- getPeerSendFun peerNodeId
-    currentTerm <- sendM readCurrentTerm
-    (persisLastLogIndexVal, persisLastLogTermVal) <- sendM
+    currentTerm <- lift readCurrentTerm
+    (persisLastLogIndexVal, persisLastLogTermVal) <- lift
       persisLastLogIndexAndTerm
     let isCandidateLogNewst =
           lastLogTerm
@@ -578,10 +578,10 @@ voteAction peerNodeId RequestVote { candidateId, lastLogIndex, lastLogTerm } =
     if not isCandidateLogNewst
       then send' (MsgRequestVoteResult (RequestVoteResult currentTerm False))
       else do
-        voteFor <- sendM readVotedFor
+        voteFor <- lift readVotedFor
         case voteFor of
           Nothing -> do
-            sendM $ writeCurrentTermAndVotedFor currentTerm (Just candidateId)
+            lift $ writeCurrentTermAndVotedFor currentTerm (Just candidateId)
             timeTracerWith (VotedForNode candidateId currentTerm)
             send' (MsgRequestVoteResult (RequestVoteResult currentTerm True))
           Just canid -> do

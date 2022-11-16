@@ -26,16 +26,16 @@ ppServer
   => Peer (Login LoginReq Bool) Server UnLogin m (Maybe Text)
 ppServer = await $ \case
   MsgLoginReq LoginReq { clientId, password } -> effect $ do
-    sendM $ say $ "clientId " ++ show clientId ++ " password: " ++ show password
+    lift $ say $ "clientId " ++ show clientId ++ " password: " ++ show password
     userMap <- ask @User
     case Map.lookup clientId userMap of
       Nothing -> do
-        sendM $ say $ "clientId " ++ show clientId ++ " not found"
+        lift $ say $ "clientId " ++ show clientId ++ " not found"
         pure $ yield (MsgLoginVerifyResult False) (done Nothing)
       Just txt -> if txt == password
         then do
-          sendM $ say $ "clientId " ++ show clientId ++ " verify success"
+          lift $ say $ "clientId " ++ show clientId ++ " verify success"
           pure $ yield (MsgLoginVerifyResult True) (done (Just clientId))
         else do
-          sendM $ say $ "clientId " ++ show clientId ++ " verify failed"
+          lift $ say $ "clientId " ++ show clientId ++ " verify failed"
           pure $ yield (MsgLoginVerifyResult False) (done Nothing)

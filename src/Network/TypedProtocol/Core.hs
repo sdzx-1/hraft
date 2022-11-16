@@ -202,13 +202,13 @@ evalPeer peer = do
     go dstate (Effect k   ) = k >>= go dstate
     go dstate (Done   x   ) = return (x, dstate)
     go dstate (Yield msg k) = do
-      sr <- sendM $ try @_ @IOError $ sendMessage msg
+      sr <- lift $ try @_ @IOError $ sendMessage msg
       case sr of
         Left  ie -> throwError (ConnectedError ie)
         Right _  -> pure ()
       go dstate k
     go dstate (Await k) = do
-      res <- sendM $ try @_ @IOError $ timeout recvTimeoutSize $ recvMessage
+      res <- lift $ try @_ @IOError $ timeout recvTimeoutSize $ recvMessage
         toSig
         dstate
       case res of

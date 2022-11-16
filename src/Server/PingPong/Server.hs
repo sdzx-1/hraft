@@ -36,9 +36,9 @@ ppServer
 ppServer = await $ \case
   MsgPing i -> effect $ do
     modify (+ i)
-    sendM $ say $ "s MsgPing " ++ show i
+    lift $ say $ "s MsgPing " ++ show i
     i' <- get @Int
     pure $ yield (MsgPong i') ppServer
   MsgDone -> Effect $ do
-    sendM $ say "server done"
+    lift $ say "server done"
     pure $ done ()

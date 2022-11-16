@@ -194,23 +194,23 @@ createFollower
   -> [(PeerNodeId, Channel (IOSim s) LBS.ByteString)]
   -> m (HEnv Int (IOSim s))
 createFollower userLogQueue nodeId peerChannels = do
-  a <- sendM $ newTVarIO 0
-  b <- sendM $ newTVarIO Nothing
-  c <- sendM $ newTVarIO M.emptyLogStore
+  a <- lift $ newTVarIO 0
+  b <- lift $ newTVarIO Nothing
+  c <- lift $ newTVarIO M.emptyLogStore
   let pf            = createPersistentFun $ Persistent a b c
       elecTimeRange = (0.2, 0.4)
   newElectSize    <- randomRDiffTime elecTimeRange
-  newElectTimeout <- sendM $ newTimeout newElectSize
+  newElectTimeout <- lift $ newTimeout newElectSize
 
-  ctv             <- sendM $ newTVarIO 0
-  latv            <- sendM $ newTVarIO 0
-  _ <- sendM $ forkIO $ aProcess (readLogs pf) ctv latv 0 (\i k -> pure (i + k, i + k))
+  ctv             <- lift $ newTVarIO 0
+  latv            <- lift $ newTVarIO 0
+  _ <- lift $ forkIO $ aProcess (readLogs pf) ctv latv 0 (\i k -> pure (i + k, i + k))
 
   let tEncode = convertCborEncoder (encode @(Msg Int))
-  tDecode        <- sendM $ convertCborDecoder (decode @(Msg Int))
-  peersRecvQueue <- sendM newTQueueIO
+  tDecode        <- lift $ convertCborDecoder (decode @(Msg Int))
+  peersRecvQueue <- lift newTQueueIO
   peerInfoMaps   <- forM peerChannels $ \(peerNodeId, channel1) -> do
-    void . sendM . forkIO $ rProcess
+    void . lift . forkIO $ rProcess
       (Tracer
         (traceM . N1 . IdWrapper (unNodeId nodeId) . IdWrapper
           (unPeerNodeId peerNodeId)
@@ -235,7 +235,7 @@ createFollower userLogQueue nodeId peerChannels = do
                  }
       state = HState newElectSize newElectTimeout
   ri <- uniform
-  void $ sendM $ forkIO $ void $ runFollow state env (mkStdGen ri)
+  void $ lift $ forkIO $ void $ runFollow state env (mkStdGen ri)
   pure env
 
 networkPartition
@@ -258,22 +258,22 @@ networkPartition nodeIds nsls ccm = forever $ do
   kls <-
     forM nsls
       $ \HEnv { nodeId, commitIndexTVar, persistentFun = PersistentFun { getAllLogs, readCurrentTerm } } ->
-          sendM $ do
+          lift $ do
             commitIndex <- readTVarIO commitIndexTVar
             atls        <- getAllLogs
             term        <- readCurrentTerm
             pure (nodeId, term, commitIndex, atls)
-  t <- sendM getCurrentTime
-  sendM
+  t <- lift getCurrentTime
+  lift
     $ traceWith (Tracer (traceM . N4 @Int)) (NetworkChange t (va, vb) ta kls)
 
-  forM_ newLs $ \(a, b) -> sendM $ atomically $ do
+  forM_ newLs $ \(a, b) -> lift $ atomically $ do
     let tv10 = snd $ fromJust $ Map.lookup (a, b) ccm
     writeTVar tv10 Disconnectd
 
-  sendM $ threadDelay ta
+  lift $ threadDelay ta
 
-  forM_ newLs $ \(a, b) -> sendM $ atomically $ do
+  forM_ newLs $ \(a, b) -> lift $ atomically $ do
     let tv10 = snd $ fromJust $ Map.lookup (a, b) ccm
     writeTVar tv10 Connected
 
@@ -283,16 +283,16 @@ createAll = do
   let nodeIds = [0 .. nds]
   ccs <- forM (ft nodeIds) $ \(na, nb) -> do
     dt            <- randomRDiffTime (0.01, 0.03)
-    connStateTVar <- sendM $ newTVarIO Connected
+    connStateTVar <- lift $ newTVarIO Connected
     (ca, cb)      <-
-      sendM $ createConnectedBufferedChannelsWithDelay @_ @LBS.ByteString
+      lift $ createConnectedBufferedChannelsWithDelay @_ @LBS.ByteString
         connStateTVar
         dt
         100
     pure [((na, nb), (ca, connStateTVar)), ((nb, na), (cb, connStateTVar))]
   let ccm = Map.fromList $ concat ccs
-  userLogQueue <- sendM newTQueueIO
-  _            <- sendM $ forkIO $ do
+  userLogQueue <- lift newTQueueIO
+  _            <- lift $ forkIO $ do
     forM_ [1 ..] $ \i -> do
       atomically $ writeTQueue userLogQueue i
       threadDelay 0.5
@@ -304,24 +304,24 @@ createAll = do
 
   ri <- uniform
   _  <-
-    sendM
+    lift
     . forkIO
     . void
     . runLabelledLift
     . runRandom (mkStdGen ri)
     $ networkPartition nodeIds nsls ccm
   dt <- randomRDiffTime (10, 30)
-  sendM $ threadDelay dt
+  lift $ threadDelay dt
 
   kls <-
     forM nsls
       $ \HEnv { nodeId, commitIndexTVar, lastAppliedTVar, persistentFun } ->
-          sendM $ do
+          lift $ do
             commitIndex <- readTVarIO commitIndexTVar
             lastApplied <- readTVarIO lastAppliedTVar
             atls        <- getAllLogs persistentFun
             pure (nodeId, commitIndex, lastApplied, atls)
-  sendM $ traceWith (Tracer (traceM . N3 @Int)) kls
+  lift $ traceWith (Tracer (traceM . N3 @Int)) kls
 
 verifyResult :: NTracer a -> Bool
 verifyResult (N3 xs) =

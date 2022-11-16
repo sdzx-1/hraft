@@ -53,7 +53,7 @@ main = runTCPServer Nothing "3000" foo
                   m_userId <- evalPeer Login.ppServer
                   case m_userId of
                       Nothing -> do
-                          sendM $ putStrLn "login failed, terminate connect."
+                          lift $ putStrLn "login failed, terminate connect."
                           throwError ()
                       Just _userId -> do
                           evalPeer PingPong.ppServer

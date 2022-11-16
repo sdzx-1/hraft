@@ -33,10 +33,10 @@ main :: IO ()
 main = runTCPClient "127.0.0.1" "3000" $ \sc -> do
     res <-
         runLabelledLift . runPeer (socketAsChannel sc) 3 . runError @String $ do
-            userId <- sendM $ do
+            userId <- lift $ do
                 putStrLn "input userId"
                 T.pack <$> getLine
-            pw <- sendM $ do
+            pw <- lift $ do
                 putStrLn "input password"
                 T.pack <$> getLine
             b <- evalPeer (Login.ppClient userId pw)
