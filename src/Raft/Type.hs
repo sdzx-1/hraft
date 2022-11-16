@@ -123,7 +123,7 @@ type RecvQueue s m = TQueue m (PeerNodeId, Msg s)
 
 type LastAppliedTVar m = TVar m Index
 
-type ApplyFun state operate m = state -> operate -> m state
+type ApplyFun state operate output m = state -> operate -> m (state, output)
 
 type LogReader m operate = Index -> Index -> m [TermWarpper operate]
 

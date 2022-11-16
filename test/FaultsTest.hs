@@ -201,7 +201,7 @@ createFollower nodeId = do
                                      commitIndexTVar
                                      lastAppliedTVar
                                      0
-                                     (\i k -> pure (i + k))
+                                     (\i k -> pure (i + k, i + k))
 
   let tEncode = convertCborEncoder (encode @(Msg Int))
   tDecode        <- sendM $ convertCborDecoder (decode @(Msg Int))

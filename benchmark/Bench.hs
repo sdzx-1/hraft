@@ -204,7 +204,7 @@ createFollower userLogQueue nodeId peerChannels = do
 
   ctv             <- sendM $ newTVarIO 0
   latv            <- sendM $ newTVarIO 0
-  _ <- sendM $ forkIO $ aProcess (readLogs pf) ctv latv 0 (\i k -> pure (i + k))
+  _ <- sendM $ forkIO $ aProcess (readLogs pf) ctv latv 0 (\i k -> pure (i + k, i + k))
 
   let tEncode = convertCborEncoder (encode @(Msg Int))
   tDecode        <- sendM $ convertCborDecoder (decode @(Msg Int))

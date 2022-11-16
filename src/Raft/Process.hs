@@ -71,7 +71,7 @@ aProcess
   -> CommitIndexTVar m
   -> LastAppliedTVar m
   -> state
-  -> ApplyFun state operate m
+  -> ApplyFun state operate output m
   -> m ()
 aProcess logReader commitTVar lastAppTVar state'' applyFun = do
   (start, end) <- atomically $ do
@@ -82,7 +82,7 @@ aProcess logReader commitTVar lastAppTVar state'' applyFun = do
   operates <- logReader start end
   let go state' []                     = pure state'
       go state' (TermWarpper _ x : xs) = do
-        newState <- applyFun state' x
+        (newState, _) <- applyFun state' x
         go newState xs
   newState <- go state'' operates
   atomically $ writeTVar lastAppTVar end
