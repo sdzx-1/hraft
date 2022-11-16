@@ -33,3 +33,4 @@ server = await $ \case
             else do
                 sendM $ say $ "server resp " ++ show (i + 1)
                 pure $ yield (CSendResult (i + 1)) server
+    ClientTerminate -> done ()
