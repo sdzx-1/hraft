@@ -75,6 +75,10 @@ library
                      , Server.Login.Client
                      , Server.Login.Type
 
+                     , Server.OperateReq.Type
+                     , Server.OperateReq.Client
+                     , Server.OperateReq.Server
+
                      , Server.Server
                      , Server.Client
 

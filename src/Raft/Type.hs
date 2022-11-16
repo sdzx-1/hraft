@@ -20,7 +20,7 @@ import           Data.Map                       ( Map )
 import           Data.Time
 import           GHC.Generics
 
-newtype NodeId = NodeId Int deriving (Eq, Ord, Generic, NFData)
+newtype NodeId = NodeId Int deriving (Eq, Ord, Generic, Serialise, NFData)
 
 instance Show NodeId where
   show (NodeId i) = show i
