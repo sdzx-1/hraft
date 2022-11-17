@@ -157,6 +157,7 @@ tClient
   :: forall s sig m
    . ( HasLabelledLift (IOSim s) sig m
      , Has Random sig m
+     , Has (State NodeId) sig m
      , HasLabelled NodeInfoMap (Reader (Map NodeId (NodeInfo s))) sig m
      )
   => m ()
@@ -183,7 +184,8 @@ tClient = do
             $ evalPeer Mini.server
         pure clientChannel
 
-  let go i nodeId = do
+  let go i = do
+        nodeId <- get
         clchannel <- startServer nodeId
         (_, res) <-
           lift
@@ -192,24 +194,25 @@ tClient = do
             . evalPeer
             $ Mini.client i
         case res of
-          Left _ -> do
-            lift $ say "error happend, retry"
+          Left e -> do
+            lift $ say $ "error happend: , " ++ show e ++ " retry"
             lift $ threadDelay 0.2
-            go i nodeId
+            go i
           Right Nothing -> do
             lift $ say "finish"
             pure ()
           Right (Just Nothing) -> do
             lift $ say "selecting leader "
             lift $ threadDelay 0.2
-            go i (NodeId 0)
+            go i
           Right (Just (Just id')) -> do
             lift $ say $ "connect to new leader " ++ show id'
-            go i (NodeId id')
+            put (NodeId id')
+            go i
 
   -- start client
   forM_ [1 .. 20] $ \i -> do
-    go i (NodeId 0)
+    go i
     lift $ threadDelay 0.1
 
 data BaseEnv s = BaseEnv
@@ -420,6 +423,7 @@ createAll
           . runRandom (mkStdGen randomI')
           . runReader nodeInfos
           . runLabelled @NodeInfoMap
+          . runState (NodeId 0)
           $ do
             tClient
       ---------------------------------
