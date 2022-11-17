@@ -6,7 +6,6 @@
 
 module Server.OperateReq.Client where
 
-import Control.Carrier.Random.Gen
 import Control.Effect.Labelled
 import Control.Monad.Class.MonadSay
 import Network.TypedProtocol.Core
@@ -15,15 +14,14 @@ import Server.OperateReq.Type
 
 client
   :: ( MonadSay n
-     , Has Random sig m
      , HasLabelledLift n sig m
      )
   => Int
-  -> Peer (Operate Int Int) Client Idle m (Maybe Id)
+  -> Peer (Operate Int Int) Client Idle m (Maybe (Maybe Id))
 client reqI = yield (SendOp reqI) $
   await $ \case
     SendResult i -> effect $ do
       lift $ say $ "client recv " ++ show i
       lift $ say "client done"
       pure (done Nothing)
-    MasterChange nid -> done nid
+    MasterChange nid -> done (Just nid)
