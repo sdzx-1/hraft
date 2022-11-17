@@ -42,10 +42,10 @@ instance (Serialise req, Serialise resp) => Protocol (Operate req resp) where
   data Message (Operate req resp) from to where
     SendOp :: req -> Message (Operate req resp) Idle Busy
     SendResult :: resp -> Message (Operate req resp) Busy CDone
-    MasterChange :: NodeId -> Message (Operate req resp) Busy SDone
+    MasterChange :: Maybe Id -> Message (Operate req resp) Busy SDone
     CSendOp :: req -> Message (Operate req resp) Idle CBusy
     CSendResult :: resp -> Message (Operate req resp) CBusy Idle
-    CMasterChange :: NodeId -> Message (Operate req resp) CBusy SDone
+    CMasterChange :: Maybe Id -> Message (Operate req resp) CBusy SDone
     ClientTerminate :: Message (Operate req resp) Idle CDone
 
   data Sig (Operate req resp) st where

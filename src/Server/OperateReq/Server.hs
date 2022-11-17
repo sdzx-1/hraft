@@ -1,41 +1,68 @@
+{-# LANGUAGE AllowAmbiguousTypes #-}
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE NamedFieldPuns #-}
+{-# LANGUAGE PolyKinds #-}
+{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# OPTIONS_GHC -Wno-unticked-promoted-constructors #-}
 
 module Server.OperateReq.Server where
 
+import Control.Concurrent.Class.MonadSTM
 import Control.Effect.Labelled
+import Control.Effect.Reader (Reader)
+import qualified Control.Effect.Reader.Labelled as L
 import Control.Monad.Class.MonadSay
-import Network.TypedProtocol.Core
+import Network.TypedProtocol.Core hiding (Role)
 import Raft.Type
 import Server.OperateReq.Type
 
+data ServerEnv s output n = ServerEnv
+  { role :: TVar n Role
+  , userLogQueue :: TQueue n (s, TMVar n (ApplyResult output))
+  }
+
 server
   :: ( MonadSay n
+     , MonadSTM n
+     , Show s
+     , Show output
      , HasLabelledLift n sig m
+     , HasLabelled ServerEnv (Reader (ServerEnv s output n)) sig m
      )
-  => Peer (Operate Int Int) Server Idle m ()
-server = await $ \case
-  SendOp i -> effect $ do
-    lift $ say $ "server recv " ++ show i
-    let changeMaster = False
-    if changeMaster
-      then pure $ yield (MasterChange (NodeId 1)) $ done ()
-      else do
-        lift $ say $ "server resp " ++ show (i + 1)
-        pure $
-          yield (SendResult (i + 1)) $
-            effect $ do
-              lift $ say "server done"
-              pure $ done ()
-  CSendOp i -> effect $ do
-    lift $ say $ "server recv " ++ show i
-    let changeMaster = False
-    if changeMaster
-      then pure $ yield (CMasterChange (NodeId 1)) $ done ()
-      else do
-        lift $ say $ "server resp " ++ show (i + 1)
-        pure $ yield (CSendResult (i + 1)) server
-  ClientTerminate -> done ()
+  => Peer (Operate s output) Server Idle m ()
+server = effect $ do
+  ServerEnv{role, userLogQueue} <- L.ask @ServerEnv
+  pure $ await $ \case
+    ClientTerminate -> done ()
+    SendOp i -> effect $ do
+      r <- lift $ readTVarIO role
+      case r of
+        Follower jid -> case jid of
+          Nothing -> do
+            pure $ yield (MasterChange Nothing) $ done ()
+          Just id' -> pure $ yield (MasterChange $ Just id') $ done ()
+        Leader -> do
+          tmv <- lift newEmptyTMVarIO
+          lift $ atomically $ writeTQueue userLogQueue (i, tmv)
+          resp <- lift $ atomically $ takeTMVar tmv
+          case resp of
+            Success resp' -> pure $ yield (SendResult resp') $ done ()
+            LeaderChange id' -> pure $ yield (MasterChange $ Just id') $ done ()
+    CSendOp i -> effect $ do
+      r <- lift $ readTVarIO role
+      case r of
+        Follower jid -> case jid of
+          Nothing -> do
+            pure $ yield (CMasterChange Nothing) $ done ()
+          Just id' -> pure $ yield (CMasterChange $ Just id') $ done ()
+        Leader -> do
+          tmv <- lift newEmptyTMVarIO
+          lift $ atomically $ writeTQueue userLogQueue (i, tmv)
+          resp <- lift $ atomically $ takeTMVar tmv
+          case resp of
+            Success resp' -> pure $ yield (CSendResult resp') server
+            LeaderChange id' -> pure $ yield (CMasterChange $ Just id') $ done ()
