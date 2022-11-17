@@ -112,6 +112,7 @@ library
                     , fused-effects-random
                     , network
                     , text
+                    , deque
 
     -- Directories containing source files.
     hs-source-dirs:   src
@@ -240,7 +241,8 @@ test-suite hraft-test
         MonadRandom,
         random-shuffle,
         fused-effects,
-        fused-effects-random
+        fused-effects-random,
+        deque
 
 benchmark benchmark
   type:           exitcode-stdio-1.0

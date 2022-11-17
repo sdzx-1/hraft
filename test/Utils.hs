@@ -69,7 +69,7 @@ createPersistentFun Persistent{currentTermTVar, votedForTVar, logStore} =
         pure $ if index == 0 then TermWarpper 0 undefined else v
     , readLogs = \startIndex endIndex -> do
         oldLS <- readTVarIO logStore
-        let vs = M.readLogs (startIndex - 1) (endIndex - 1) oldLS
+        let vs = zip [startIndex .. endIndex] $ M.readLogs (startIndex - 1) (endIndex - 1) oldLS
         pure vs
     , persisLastLogIndexAndTerm = do
         oldLS <- readTVarIO logStore

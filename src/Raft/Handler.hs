@@ -38,25 +38,27 @@ import Control.Monad.Random (
 import qualified Data.Map as Map
 import Data.Maybe
 import qualified Data.Set as Set
+import Deque.Strict (snoc)
+import GHC.Exts (fromList, toList)
 import Raft.Process (cProcess)
 import Raft.Type
 import Raft.Utils
 
 runFollower
-  :: forall s n
+  :: forall s o n
    . ( MonadTime n
      , MonadTimer n
      , MonadFork n
      )
   => HState s n
-  -> HEnv s n
+  -> HEnv s o n
   -> StdGen
   -> n (HState s n, (StdGen, ()))
 runFollower s e g =
   runLabelledLift
     . runState @(HState s n) s
     . runLabelled @HState
-    . runReader @(HEnv s n) e
+    . runReader @(HEnv s o n) e
     . runLabelled @HEnv
     . runRandom g
     $ follower
@@ -68,7 +70,7 @@ follower
      , MonadFork n
      , Has Random sig m
      , HasLabelledLift n sig m
-     , HasLabelled HEnv (Reader (HEnv s n)) sig m
+     , HasLabelled HEnv (Reader (HEnv s o n)) sig m
      , HasLabelled HState (State (HState s n)) sig m
      )
   => m ()
@@ -132,7 +134,7 @@ candidate
      , MonadFork n
      , Has Random sig m
      , HasLabelledLift n sig m
-     , HasLabelled HEnv (Reader (HEnv s n)) sig m
+     , HasLabelled HEnv (Reader (HEnv s o n)) sig m
      , HasLabelled HState (State (HState s n)) sig m
      )
   => m ()
@@ -414,13 +416,14 @@ leader
      , MonadTimer n
      , Has Random sig m
      , HasLabelledLift n sig m
-     , HasLabelled HEnv (Reader (HEnv s n)) sig m
+     , HasLabelled HEnv (Reader (HEnv s o n)) sig m
      , HasLabelled HState (State (HState s n)) sig m
      )
   => m ()
 leader = do
   HEnv
     { nodeId
+    , role
     , peerInfos
     , persistentFun =
       ps@PersistentFun
@@ -432,11 +435,14 @@ leader = do
     , peersRecvQueue
     , commitIndexTVar
     , userLogQueue
+    , leaderAcceptReqList
+    , needReplyOutputMap
     , appendEntriesRpcRetryWaitTime
     , heartbeatWaitTime
     , tracer
     } <-
     R.ask @HEnv
+  lift $ atomically $ writeTVar role Leader
   currentTerm <- lift readCurrentTerm
   (pi', pt) <- lift persisLastLogIndexAndTerm
   commitIndex <- lift $ readTVarIO commitIndexTVar
@@ -484,12 +490,41 @@ leader = do
       tmpPeersResultQueue = Map.fromList $ map (second fst) pns
 
   cmdQueue <- lift newTQueueIO
-  _ <- lift $ forkIO $ cProcess ps cmdQueue commitIndexTVar miTVars 0
+  _ <-
+    lift $
+      forkIO $
+        cProcess
+          ps
+          cmdQueue
+          commitIndexTVar
+          leaderAcceptReqList
+          needReplyOutputMap
+          miTVars
+          0
 
-  let stopDependProcess = do
+  let stopDependProcessAndReplyReq id' = do
         lift $ atomically $ writeTQueue cmdQueue Terminate
         forM_ (Map.elems tmpPeersResultQueue) $
           \tq -> lift $ atomically (writeTQueue tq (Left Terminate))
+        --------------
+        lift $ atomically $ writeTVar role (Follower $ Just id')
+        --------------
+        let cleanUQ = do
+              e <- lift $ atomically $ isEmptyTQueue userLogQueue
+              if e
+                then pure ()
+                else do
+                  lift $ atomically $ do
+                    (_, tmv) <- readTQueue userLogQueue
+                    putTMVar tmv (LeaderChange id')
+                  cleanUQ
+
+        cleanUQ
+        --------------
+        lAR <- lift $ readTVarIO leaderAcceptReqList
+        lift $ atomically $ writeTVar leaderAcceptReqList (fromList [])
+        forM_ (toList lAR) $ \(_ :: Index, tmv) -> do
+          lift $ atomically $ putTMVar tmv (LeaderChange id')
 
       go = do
         mMsg <-
@@ -498,9 +533,11 @@ leader = do
               (Left <$> readTQueue peersRecvQueue)
                 <|> (Right <$> readTQueue userLogQueue)
         case mMsg of
-          Right log' -> do
+          Right (log', tmvar) -> do
             index <- lift $ appendLog (TermWarpper currentTerm log')
-            lift $ atomically $ writeTVar lastLogIndexTVar index
+            lift $ atomically $ do
+              modifyTVar' leaderAcceptReqList ((index, tmvar) `snoc`)
+              writeTVar lastLogIndexTVar index
             go
           Left (peerNodeId, msg') -> do
             timeTracerWith (LeaderRecvMsg (peerNodeId, msg'))
@@ -518,7 +555,7 @@ leader = do
                     go
                   EQ -> error "undefined behave"
                   GT -> do
-                    stopDependProcess
+                    stopDependProcessAndReplyReq (unPeerNodeId peerNodeId)
                     lift $ writeCurrentTermAndVotedFor term Nothing
                     appendAction ranNum' peerNodeId appEnt'
                     newTimeout'
@@ -538,7 +575,7 @@ leader = do
                       (MsgRequestVoteResult (RequestVoteResult currentTerm False))
                     go
                   GT -> do
-                    stopDependProcess
+                    stopDependProcessAndReplyReq (unPeerNodeId peerNodeId)
                     lift $ writeCurrentTermAndVotedFor term Nothing
                     voteAction peerNodeId reqVote
                     newTimeout'
@@ -553,7 +590,7 @@ leader = do
                       lift $ atomically $ writeTQueue tq (Right (ranNum', apr))
                       go
                     GT -> do
-                      stopDependProcess
+                      stopDependProcessAndReplyReq (unPeerNodeId peerNodeId)
                       lift $ writeCurrentTermAndVotedFor term Nothing
                       newTimeout'
                       follower
@@ -566,7 +603,7 @@ appendAction
      , MonadTimer n
      , MonadSTM n
      , HasLabelledLift n sig m
-     , HasLabelled HEnv (Reader (HEnv s n)) sig m
+     , HasLabelled HEnv (Reader (HEnv s o n)) sig m
      )
   => RandomNumber
   -> PeerNodeId
@@ -580,6 +617,7 @@ appendAction
     , prevLogTerm
     , entries
     , leaderCommit
+    , leaderId
     } =
     do
       HEnv
@@ -592,8 +630,10 @@ appendAction
             , removeLogs
             }
         , commitIndexTVar
+        , role
         } <-
         R.ask @HEnv
+      lift $ atomically $ writeTVar role (Follower (Just leaderId))
       send' <- getPeerSendFun peerNodeId
       currentTerm <- lift readCurrentTerm
       prevCheck <- lift $ checkAppendentries prevLogIndex prevLogTerm
@@ -639,7 +679,7 @@ voteAction
      , MonadTimer n
      , MonadSTM n
      , HasLabelledLift n sig m
-     , HasLabelled HEnv (Reader (HEnv s n)) sig m
+     , HasLabelled HEnv (Reader (HEnv s o n)) sig m
      )
   => PeerNodeId
   -> RequestVote
@@ -694,30 +734,30 @@ voteAction
                   send'
                     (MsgRequestVoteResult (RequestVoteResult currentTerm False))
 
-type S s n =
+type S s o n =
   RandomC
     StdGen
     ( Labelled
         HEnv
-        (ReaderC (HEnv s n))
+        (ReaderC (HEnv s o n))
         (Labelled HState (StateC (HState s n)) (LabelledLift Lift n))
     )
     ()
 
-{-# SPECIALIZE follower:: S s IO #-}
-{-# SPECIALIZE follower:: S s (IOSim n) #-}
+{-# SPECIALIZE follower:: S s o IO #-}
+{-# SPECIALIZE follower:: S s o (IOSim n) #-}
 
-{-# SPECIALIZE candidate:: S s IO #-}
-{-# SPECIALIZE candidate:: S s (IOSim n) #-}
+{-# SPECIALIZE candidate:: S s o IO #-}
+{-# SPECIALIZE candidate:: S s o (IOSim n) #-}
 
-{-# SPECIALIZE leader:: S s IO #-}
-{-# SPECIALIZE leader:: S s (IOSim n) #-}
+{-# SPECIALIZE leader:: S s o IO #-}
+{-# SPECIALIZE leader:: S s o (IOSim n) #-}
 
-{-# SPECIALIZE appendAction:: RandomNumber -> PeerNodeId -> AppendEntries s -> S s IO #-}
-{-# SPECIALIZE appendAction:: RandomNumber -> PeerNodeId -> AppendEntries s -> S s (IOSim n) #-}
+{-# SPECIALIZE appendAction:: RandomNumber -> PeerNodeId -> AppendEntries s -> S s o IO #-}
+{-# SPECIALIZE appendAction:: RandomNumber -> PeerNodeId -> AppendEntries s -> S s o (IOSim n) #-}
 
-{-# SPECIALIZE voteAction:: PeerNodeId -> RequestVote -> S s IO #-}
-{-# SPECIALIZE voteAction:: PeerNodeId -> RequestVote -> S s (IOSim n) #-}
+{-# SPECIALIZE voteAction:: PeerNodeId -> RequestVote -> S s o IO #-}
+{-# SPECIALIZE voteAction:: PeerNodeId -> RequestVote -> S s o (IOSim n) #-}
 
-{-# SPECIALIZE runFollower:: HState s IO -> HEnv s IO -> StdGen -> IO (HState s IO, (StdGen, ())) #-}
-{-# SPECIALIZE runFollower:: HState s (IOSim n) -> HEnv s (IOSim n) -> StdGen -> IOSim n (HState s (IOSim n), (StdGen, ())) #-}
+{-# SPECIALIZE runFollower:: HState s IO -> HEnv s o IO -> StdGen -> IO (HState s IO, (StdGen, ())) #-}
+{-# SPECIALIZE runFollower:: HState s (IOSim n) -> HEnv s o (IOSim n) -> StdGen -> IOSim n (HState s (IOSim n), (StdGen, ())) #-}

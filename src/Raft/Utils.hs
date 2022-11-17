@@ -37,7 +37,7 @@ import Raft.Type
 timeTracerWith
   :: ( MonadTime n
      , HasLabelledLift n sig m
-     , HasLabelled HEnv (Reader (HEnv s n)) sig m
+     , HasLabelled HEnv (Reader (HEnv s output n)) sig m
      )
   => HandleTracer' s
   -> m ()
@@ -90,7 +90,7 @@ randomRDiffTime (el, et) = picosecondsToDiffTime <$> uniformR (a, b)
 getPeerSendFun
   :: ( MonadTimer n
      , HasLabelledLift n sig m
-     , HasLabelled HEnv (Reader (HEnv s n)) sig m
+     , HasLabelled HEnv (Reader (HEnv s output n)) sig m
      )
   => PeerNodeId
   -> m (Msg s -> m ())

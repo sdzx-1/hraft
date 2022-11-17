@@ -18,6 +18,7 @@ import Control.Monad.Class.MonadTimer
 import Control.Tracer
 import Data.Map (Map)
 import Data.Time
+import Deque.Strict (Deque)
 import GHC.Generics
 
 newtype NodeId = NodeId Int deriving (Eq, Ord, Generic, Serialise, NFData)
@@ -93,7 +94,7 @@ data PersistentFun log m = PersistentFun
   , ---------
     appendLog :: TermWarpper log -> m Index
   , readLog :: Index -> m (TermWarpper log)
-  , readLogs :: Index -> Index -> m [TermWarpper log]
+  , readLogs :: Index -> Index -> m [(Index, TermWarpper log)]
   , removeLogs :: Index -> m ()
   , persisLastLogIndexAndTerm :: m (Index, Term)
   , getAllLogs :: m [TermWarpper log]
@@ -122,7 +123,7 @@ type LastAppliedTVar m = TVar m Index
 
 type ApplyFun state operate output m = state -> operate -> m (state, output)
 
-type LogReader m operate = Index -> Index -> m [TermWarpper operate]
+type LogReader m operate = Index -> Index -> m [(Index, TermWarpper operate)]
 
 newtype PeerInfo s m = PeerInfo
   { peerSendFun :: Msg s -> m ()
@@ -132,9 +133,20 @@ type LastLogIndexTVar m = TVar m Index
 
 type Length = Int
 
-data HEnv s n = HEnv
+data Role
+  = Leader
+  | Follower (Maybe Id)
+
+data ApplyResult ouput
+  = Success ouput
+  | LeaderChange Id
+
+data HEnv s output n = HEnv
   { nodeId :: NodeId
-  , userLogQueue :: TQueue n s
+  , role :: TVar n Role
+  , userLogQueue :: TQueue n (s, TMVar n (ApplyResult output))
+  , leaderAcceptReqList :: TVar n (Deque (Index, TMVar n (ApplyResult output)))
+  , needReplyOutputMap :: TVar n (Map Index (TMVar n (ApplyResult output)))
   , peersRecvQueue :: RecvQueue s n
   , persistentFun :: PersistentFun s n
   , peerInfos :: Map PeerNodeId (PeerInfo s n)
