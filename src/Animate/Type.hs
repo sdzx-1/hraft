@@ -36,6 +36,7 @@ main = do
   actions_ref <- newIORef hdls
   nodeState_map_ref <- newIORef nodes
   alive_node_set_ref <- newIORef (Set.fromList $ Map.keys nodes)
+  faults_info_ref <- newIORef ""
   animateIO
     (InWindow "Nice Window" (1000, 1200) (10, 10))
     white
@@ -46,7 +47,8 @@ main = do
         nodeState_map_ref
         nodeConnectSet_ref
         alive_node_set_ref
-        . (/ 1)
+        faults_info_ref
+        . (/ 8)
     )
     (\_ -> pure ())
 
@@ -68,6 +70,7 @@ prodNextFrame
   -> IORef (Map Id NodeState)
   -> IORef (Set (Id, Id))
   -> IORef (Set Id)
+  -> IORef String
   -> Float
   -> IO Picture
 prodNextFrame
@@ -77,6 +80,7 @@ prodNextFrame
   nodeState_map_ref
   nodeConnectSet_ref
   alive_node_set_ref
+  faults_info_ref
   t = do
     actions <- readIORef actions_ref
     case actions of
@@ -100,14 +104,16 @@ prodNextFrame
                 UpdateTermAndVotedFor term vf ->
                   updateNodeState_map nid (\ns -> ns{term = term, votedFor = vf})
                 _ -> pure ()
-            NetworkChangeAction _ k@(NetworkChange ps _ _) -> do
+            NetworkChangeAction _ k@(NetworkChange ps@(pl, _) _ _) -> do
               print k
+              writeIORef faults_info_ref $ "network partitions: " ++ show pl
               writeIORef nodeConnectSet_ref nodeConnectSet
               writeIORef alive_node_set_ref (Set.fromList $ Map.keys nodes)
               let clist = getPart ps
               forM_ clist $ \p -> modifyIORef' nodeConnectSet_ref (Set.delete (swap p) . Set.delete p)
             NodeRestartAction _ k@(NodeRestart nids _) -> do
               print k
+              writeIORef faults_info_ref $ "node stop: " ++ show (map unNodeId nids)
               writeIORef nodeConnectSet_ref nodeConnectSet
               writeIORef alive_node_set_ref (Set.fromList $ Map.keys nodes)
               forM_ nids $ \(NodeId nid) -> do
@@ -118,11 +124,13 @@ prodNextFrame
         nodeState_map <- readIORef nodeState_map_ref
         nodeConnectSet' <- readIORef nodeConnectSet_ref
         alive_node_set <- readIORef alive_node_set_ref
+        faults_info <- readIORef faults_info_ref
         pure
           ( pictures
               [ renderNodeCommectSet nodeState_map nodeConnectSet'
               , rr alive_node_set nodeState_map
               , translate 0 350 $ scale 0.3 0.3 $ text $ show t
+              , translate (-250) 550 $ scale 0.3 0.3 $ text $ "faults: " ++ faults_info
               ]
           )
 
