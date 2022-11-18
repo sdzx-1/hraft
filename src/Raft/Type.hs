@@ -20,10 +20,7 @@ import Data.Map (Map)
 import Deque.Strict (Deque)
 import GHC.Generics
 
-newtype NodeId = NodeId Int deriving (Eq, Ord, Generic, Serialise, NFData)
-
-instance Show NodeId where
-  show (NodeId i) = show i
+newtype NodeId = NodeId Int deriving (Eq, Ord, Show, Generic, Serialise, NFData)
 
 unNodeId :: NodeId -> Int
 unNodeId (NodeId i) = i
