@@ -149,5 +149,5 @@ aProcess
 
 timeTracerWith :: MonadTime m => Tracer m (TimeWrapper a) -> a -> m ()
 timeTracerWith tracer a = do
-  ct <- getCurrentTime
+  ct <- getMonotonicTime
   traceWith tracer (TimeWrapper ct a)

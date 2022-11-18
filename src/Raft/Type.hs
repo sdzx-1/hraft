@@ -17,7 +17,6 @@ import Control.Monad.Class.MonadTime
 import Control.Monad.Class.MonadTimer
 import Control.Tracer
 import Data.Map (Map)
-import Data.Time
 import Deque.Strict (Deque)
 import GHC.Generics
 
@@ -214,12 +213,10 @@ type HandleTracer s = TimeWrapper (HandleTracer' s)
 
 type RecvTracer s = TimeWrapper (Msg s)
 
-data TimeWrapper a = TimeWrapper UTCTime a
+data TimeWrapper a = TimeWrapper Time a
   deriving (Eq, Generic, NFData)
 
+instance NFData Time
+
 instance Show a => Show (TimeWrapper a) where
-  show (TimeWrapper t a) =
-    let s = formatTime defaultTimeLocale "%S%Q" t
-        len = length s
-        s' = if len < 7 then s ++ replicate (7 - len) ' ' else take 7 s
-     in s' ++ " " ++ show a
+  show (TimeWrapper t a) = show t ++ " " ++ show a

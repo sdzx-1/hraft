@@ -43,7 +43,7 @@ timeTrace
   -> m ()
 timeTrace a = do
   HEnv{tracer} <- R.ask @HEnv
-  ct <- lift getCurrentTime
+  ct <- lift getMonotonicTime
   lift $ traceWith tracer (TimeWrapper ct a)
 {-# INLINE timeTrace #-}
 

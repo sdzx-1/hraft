@@ -407,7 +407,7 @@ createAll
           forM_ faultsSeq $ \fault -> do
             case fault of
               NodeFaults nis dt -> do
-                ct <- lift getCurrentTime
+                ct <- lift getMonotonicTime
                 lift $
                   traceWith
                     (Tracer (traceM . N5 @Int))

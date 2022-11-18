@@ -144,14 +144,14 @@ instance Show NetworkChange where
       ++ show dt
       ++ "\n"
 
-data NodeRestart = NodeRestart UTCTime [NodeId] DiffTime
+data NodeRestart = NodeRestart Time [NodeId] DiffTime
   deriving (Eq, Generic, NFData)
 
 instance Show NodeRestart where
   show (NodeRestart ct ids dt) =
     "====================================================\n"
       ++ "|| "
-      ++ renderUTCTime ct
+      ++ show ct
       ++ " NodeRestart "
       ++ show ids
       ++ " "
@@ -194,4 +194,4 @@ instance Show a => Show (NTracer a) where
       rs
   show (N4 v) = show v
   show (N5 v) = show v
-  show (N6 (TimeWrapper ct (ClientReq st))) = "   " ++ renderUTCTime ct ++ "CR: " ++ st
+  show (N6 (TimeWrapper ct (ClientReq st))) = "   " ++ show ct ++ "CR: " ++ st

@@ -170,7 +170,7 @@ tClient = do
   nodeInfoMap <- L.ask @NodeInfoMap
   cid <- ask @ClientId
   let trace st = do
-        ct <- lift getCurrentTime
+        ct <- lift getMonotonicTime
         lift $ traceWith (Tracer (traceM . (N6 @Int))) (TimeWrapper ct (ClientReq st))
   let startServer nodeId = do
         let NodeInfo{role, userLogQueue} = fromJust $ Map.lookup nodeId nodeInfoMap
@@ -498,7 +498,7 @@ createAll
           forM_ faultsSeq $ \fault -> do
             case fault of
               NodeFaults nis dt -> do
-                ct <- lift getCurrentTime
+                ct <- lift getMonotonicTime
                 lift $
                   traceWith
                     (Tracer (traceM . N5 @Int))
