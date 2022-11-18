@@ -24,9 +24,9 @@ import Test.QuickCheck (Arbitrary (arbitrary), Gen, generate)
 
 main :: IO ()
 main = do
-  -- env <- generate (arbitrary :: Gen Env)
-  -- print env
-  let env = tenv
+  env <- generate (arbitrary :: Gen Env)
+  print env
+  -- let env = tenv
   let hdls = concatMap trans $ runCreateAll env
       nodeNums = length $ nodeIds env
       nodes = mkNodes nodeNums
@@ -37,7 +37,7 @@ main = do
   nodeState_map_ref <- newIORef nodes
   alive_node_set_ref <- newIORef (Set.fromList $ Map.keys nodes)
   animateIO
-    (InWindow "Nice Window" (1000, 1000) (10, 10))
+    (InWindow "Nice Window" (1000, 1200) (10, 10))
     white
     ( prodNextFrame
         nodes
@@ -46,7 +46,7 @@ main = do
         nodeState_map_ref
         nodeConnectSet_ref
         alive_node_set_ref
-        . (/ 5)
+        . (/ 1)
     )
     (\_ -> pure ())
 
@@ -97,6 +97,8 @@ prodNextFrame
                 CandidateElectionSuccess{} -> updateNodeState_map nid (\ns -> ns{role = Leader})
                 LeaderToFollowerAtAP{} -> updateNodeState_map nid (\ns -> ns{role = Follower})
                 LeaderToFollowerAtRV{} -> updateNodeState_map nid (\ns -> ns{role = Follower})
+                UpdateTermAndVotedFor term vf ->
+                  updateNodeState_map nid (\ns -> ns{term = term, votedFor = vf})
                 _ -> pure ()
             NetworkChangeAction _ k@(NetworkChange ps _ _) -> do
               print k
@@ -167,6 +169,8 @@ data NodeState = NodeState
   { nodeId :: Id
   , role :: Role
   , position :: Point
+  , term :: Term
+  , votedFor :: Maybe Id
   }
 
 mkNodes :: Int -> Map Id NodeState
@@ -181,6 +185,8 @@ mkNodes len =
               ( r * sin (pat * fromIntegral i)
               , r * cos (pat * fromIntegral i)
               )
+              0
+              Nothing
           )
         | i <- [0 .. len - 1]
         ]
@@ -201,11 +207,13 @@ rr alive_node_set m =
           ls
 
 renderNodeState :: Set Id -> NodeState -> Picture
-renderNodeState alive_node_set NodeState{nodeId, role, position = (x, y)} =
+renderNodeState alive_node_set NodeState{nodeId, role, position = (x, y), term, votedFor} =
   translate x y $
     pictures
       [ if Set.member nodeId alive_node_set
           then color (roleToColor role) $ circleSolid 10
           else blank
-      , translate 10 0 $ scale 0.2 0.2 $ text (show nodeId)
+      , translate 10 0 $ scale 0.2 0.2 $ text $ show nodeId
+      , translate 10 (-20) $ scale 0.2 0.2 $ text $ "term: " ++ show term
+      , translate 10 (-40) $ scale 0.2 0.2 $ text $ "vote: " ++ show votedFor
       ]
