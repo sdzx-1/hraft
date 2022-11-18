@@ -34,18 +34,18 @@ import Data.Time (
  )
 import Raft.Type
 
-timeTracerWith
+timeTrace
   :: ( MonadTime n
      , HasLabelledLift n sig m
      , HasLabelled HEnv (Reader (HEnv s output n)) sig m
      )
   => HandleTracer' s
   -> m ()
-timeTracerWith a = do
+timeTrace a = do
   HEnv{tracer} <- R.ask @HEnv
   ct <- lift getCurrentTime
   lift $ traceWith tracer (TimeWrapper ct a)
-{-# INLINE timeTracerWith #-}
+{-# INLINE timeTrace #-}
 
 waitTimeout :: (MonadTimer n, MonadSTM n) => Timeout n -> STM n ()
 waitTimeout timeout' = do

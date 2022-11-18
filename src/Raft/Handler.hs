@@ -92,10 +92,10 @@ follower = do
           <|> (Right <$> readTQueue peersRecvQueue)
   case val of
     Left () -> do
-      timeTracerWith FollowerTimeoutToCandidate
+      timeTrace FollowerTimeoutToCandidate
       candidate
     Right (peerNodeId, msg) -> do
-      timeTracerWith (FollowerRecvMsg (peerNodeId, msg))
+      timeTrace (FollowerRecvMsg (peerNodeId, msg))
       send' <- getPeerSendFun peerNodeId
       currentTerm <- lift readCurrentTerm
       case msg of
@@ -153,19 +153,19 @@ candidate = do
     R.ask @HEnv
   oldTerm <- lift readCurrentTerm
   lift $ writeCurrentTermAndVotedFor (oldTerm + 1) (Just $ unNodeId nodeId)
-  timeTracerWith (CandidateNewElectionStart (oldTerm + 1))
-  timeTracerWith (VotedForNode (unNodeId nodeId) (oldTerm + 1))
+  timeTrace (CandidateNewElectionStart (oldTerm + 1))
+  timeTrace (VotedForNode (unNodeId nodeId) (oldTerm + 1))
   randomElectionSize <- randomRDiffTime electionTimeRange
   newTimeo <- lift $ newTimeout randomElectionSize
   S.put @HState
     (HState{electionSize = randomElectionSize, electionTimeout = newTimeo})
-  timeTracerWith (CandidateSetNewElectionSzie randomElectionSize)
+  timeTrace (CandidateSetNewElectionSzie randomElectionSize)
   allSend <- mapM getPeerSendFun (Map.keys peerInfos)
   currentTerm <- lift readCurrentTerm
   (persisLastLogIndexVal, persisLastLogTermVal) <-
     lift
       persisLastLogIndexAndTerm
-  timeTracerWith (CandidateSendVotoForMsgToAll (Map.keys peerInfos))
+  timeTrace (CandidateSendVotoForMsgToAll (Map.keys peerInfos))
   forM_ allSend $ \send' -> do
     send'
       ( MsgRequestVote
@@ -197,10 +197,10 @@ candidate = do
               <|> (Right <$> readTQueue peersRecvQueue)
       case val of
         Left () -> do
-          timeTracerWith CandidateElectionTimeout
+          timeTrace CandidateElectionTimeout
           candidate
         Right (peerNodeId, msg) -> do
-          timeTracerWith (CandidateRecvMsg (peerNodeId, msg))
+          timeTrace (CandidateRecvMsg (peerNodeId, msg))
           currentTerm <- lift readCurrentTerm
           send' <- getPeerSendFun peerNodeId
           case msg of
@@ -246,7 +246,7 @@ candidate = do
                       let newVoteTrueSet = Set.insert peerNodeId voteTrueSet
                       if Set.size newVoteTrueSet >= (Map.size peerInfos `div` 2)
                         then do
-                          timeTracerWith
+                          timeTrace
                             ( CandidateElectionSuccess
                                 (Set.toList newVoteTrueSet)
                                 currentTerm
@@ -258,7 +258,7 @@ candidate = do
                       if Set.size newVoteFalseSet
                         >= (Map.size peerInfos `div` 2 + 1)
                         then do
-                          timeTracerWith
+                          timeTrace
                             ( CandidateElectionFailed
                                 (Set.toList newVoteFalseSet)
                                 currentTerm
@@ -446,7 +446,7 @@ leader = do
   currentTerm <- lift readCurrentTerm
   (pi', pt) <- lift persisLastLogIndexAndTerm
   commitIndex <- lift $ readTVarIO commitIndexTVar
-  timeTracerWith (LeaderSendEmptyAppendEntries (Map.keys peerInfos))
+  timeTrace (LeaderSendEmptyAppendEntries (Map.keys peerInfos))
   ranNum <- uniform
   let appEnt =
         AppendEntries currentTerm (unNodeId nodeId) pi' pt [] commitIndex
@@ -540,13 +540,13 @@ leader = do
               writeTVar lastLogIndexTVar index
             go
           Left (peerNodeId, msg') -> do
-            timeTracerWith (LeaderRecvMsg (peerNodeId, msg'))
+            timeTrace (LeaderRecvMsg (peerNodeId, msg'))
             case msg' of
               MsgAppendEntries ranNum' appEnt'@AppendEntries{term} -> do
                 send' <- getPeerSendFun peerNodeId
                 case compare term currentTerm of
                   LT -> do
-                    timeTracerWith (LeaderRecvPastAppendEntries appEnt')
+                    timeTrace (LeaderRecvPastAppendEntries appEnt')
                     send'
                       ( MsgAppendEntriesResult
                           ranNum'
@@ -559,18 +559,18 @@ leader = do
                     lift $ writeCurrentTermAndVotedFor term Nothing
                     appendAction ranNum' peerNodeId appEnt'
                     newTimeout'
-                    timeTracerWith LeaderToFollowerAtAP
+                    timeTrace LeaderToFollowerAtAP
                     follower
               MsgRequestVote reqVote@RequestVote{term} -> do
                 send' <- getPeerSendFun peerNodeId
                 case compare term currentTerm of
                   LT -> do
-                    timeTracerWith (LeaderRecvPastRequestVote reqVote)
+                    timeTrace (LeaderRecvPastRequestVote reqVote)
                     send'
                       (MsgRequestVoteResult (RequestVoteResult currentTerm False))
                     go
                   EQ -> do
-                    timeTracerWith (LeaderRecvPastRequestVote reqVote)
+                    timeTrace (LeaderRecvPastRequestVote reqVote)
                     send'
                       (MsgRequestVoteResult (RequestVoteResult currentTerm False))
                     go
@@ -579,7 +579,7 @@ leader = do
                     lift $ writeCurrentTermAndVotedFor term Nothing
                     voteAction peerNodeId reqVote
                     newTimeout'
-                    timeTracerWith LeaderToFollowerAtRV
+                    timeTrace LeaderToFollowerAtRV
                     follower
               MsgAppendEntriesResult ranNum' apr@AppendEntriesResult{term} ->
                 do
@@ -637,7 +637,7 @@ appendAction
       send' <- getPeerSendFun peerNodeId
       currentTerm <- lift readCurrentTerm
       prevCheck <- lift $ checkAppendentries prevLogIndex prevLogTerm
-      timeTracerWith (FollowerCheckPrevLog prevCheck)
+      timeTrace (FollowerCheckPrevLog prevCheck)
       if not prevCheck
         then
           send'
@@ -665,7 +665,7 @@ appendAction
                 writeTVar
                   commitIndexTVar
                   (min leaderCommit persisLastLogIndexVal)
-            timeTracerWith
+            timeTrace
               ( FollowerUpdateCommitIndex
                   leaderCommit
                   persisLastLogIndexVal
@@ -722,12 +722,12 @@ voteAction
           case voteFor of
             Nothing -> do
               lift $ writeCurrentTermAndVotedFor currentTerm (Just candidateId)
-              timeTracerWith (VotedForNode candidateId currentTerm)
+              timeTrace (VotedForNode candidateId currentTerm)
               send' (MsgRequestVoteResult (RequestVoteResult currentTerm True))
             Just canid -> do
               if canid == candidateId
                 then do
-                  timeTracerWith (VotedForNode candidateId currentTerm)
+                  timeTrace (VotedForNode candidateId currentTerm)
                   send'
                     (MsgRequestVoteResult (RequestVoteResult currentTerm True))
                 else
