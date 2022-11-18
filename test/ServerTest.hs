@@ -155,16 +155,20 @@ data NodeInfo s = NodeInfo
 
 data NodeInfoMap
 
+newtype ClientId = ClientId Int deriving (Show)
+
 tClient
   :: forall s sig m
    . ( HasLabelledLift (IOSim s) sig m
      , Has Random sig m
      , Has (State NodeId) sig m
+     , Has (Reader ClientId) sig m
      , HasLabelled NodeInfoMap (Reader (Map NodeId (NodeInfo s))) sig m
      )
   => m ()
 tClient = do
   nodeInfoMap <- L.ask @NodeInfoMap
+  cid <- ask @ClientId
   let trace st = do
         ct <- lift getCurrentTime
         lift $ traceWith (Tracer (traceM . (N6 @Int))) (TimeWrapper ct (ClientReq st))
@@ -198,21 +202,21 @@ tClient = do
       go i = do
         nodeId <- get
         clchannel <- startServer nodeId
-        trace $ "send req: " ++ show i ++ " to Node: " ++ show nodeId
+        trace $ show cid ++ " send req: " ++ show i ++ " to Node: " ++ show nodeId
         res <- snd <$> call clchannel i
         case res of
           Left e -> do
-            trace $ "error happend: , " ++ show e ++ " retry"
+            trace $ show cid ++ " error happend: , " ++ show e ++ " retry"
             oldNodeId <- get @NodeId
             let newAllNodeIds = L.delete oldNodeId allNodeIds
             ri <- uniformR (0, length newAllNodeIds - 1)
             put (newAllNodeIds !! ri)
             go i
           Right (Right i') -> do
-            trace $ "finish, result: " ++ show i'
+            trace $ show cid ++ " finish, result: " ++ show i'
             pure ()
           Right (Left Nothing) -> do
-            trace "selecting leader "
+            trace $ show cid ++ " selecting leader "
             lift $ threadDelay 0.1
             oldNodeId <- get @NodeId
             let newAllNodeIds = L.delete oldNodeId allNodeIds
@@ -220,7 +224,7 @@ tClient = do
             put (newAllNodeIds !! ri)
             go i
           Right (Left (Just id')) -> do
-            trace $ "connect to new leader " ++ show id'
+            trace $ show cid ++ " connect to new leader " ++ show id'
             put (NodeId id')
             go i
 
@@ -428,8 +432,8 @@ createAll
               }
 
       ---------------------------------
-      randomI' <- uniform
-      _ <-
+      forM_ [1, 2] $ \cid -> do
+        randomI' <- uniform
         lift
           . forkIO
           . void
@@ -437,6 +441,7 @@ createAll
           . runRandom (mkStdGen randomI')
           . runReader nodeInfos
           . runLabelled @NodeInfoMap
+          . runReader (ClientId cid)
           . runState (NodeId 0)
           $ do
             tClient
