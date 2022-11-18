@@ -204,6 +204,7 @@ data HandleTracer' s
   | LeaderStartSyncThread NodeId
   | LeaderRecvMsg (PeerNodeId, Msg s)
   | SyncPrevLogIndex NodeId PeerNodeId Index
+  | UpdateTermAndVotedFor Term (Maybe Id)
   deriving (Eq, Show, Generic, NFData)
 
 type HandleTracer s = TimeWrapper (HandleTracer' s)

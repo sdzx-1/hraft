@@ -113,6 +113,7 @@ follower = do
             GT -> do
               updateTimeout'
               lift $ writeCurrentTermAndVotedFor term Nothing
+              timeTrace $ UpdateTermAndVotedFor term Nothing
               appendAction ranNum peerNodeId appEnt
           follower
         MsgRequestVote reqVote@RequestVote{term} -> do
@@ -122,6 +123,7 @@ follower = do
             EQ -> voteAction peerNodeId reqVote
             GT -> do
               lift $ writeCurrentTermAndVotedFor term Nothing
+              timeTrace $ UpdateTermAndVotedFor term Nothing
               voteAction peerNodeId reqVote
           follower
         MsgAppendEntriesResult _ _ -> follower
@@ -155,6 +157,7 @@ candidate = do
   lift $ atomically $ writeTVar role Candidate
   oldTerm <- lift readCurrentTerm
   lift $ writeCurrentTermAndVotedFor (oldTerm + 1) (Just $ unNodeId nodeId)
+  timeTrace $ UpdateTermAndVotedFor (oldTerm + 1) (Just $ unNodeId nodeId)
   timeTrace (CandidateNewElectionStart (oldTerm + 1))
   timeTrace (VotedForNode (unNodeId nodeId) (oldTerm + 1))
   randomElectionSize <- randomRDiffTime electionTimeRange
@@ -221,6 +224,7 @@ candidate = do
                   follower
                 GT -> do
                   lift $ writeCurrentTermAndVotedFor term Nothing
+                  timeTrace $ UpdateTermAndVotedFor term Nothing
                   appendAction ranNum peerNodeId appEnt
                   updateTimeout'
                   follower
@@ -236,6 +240,7 @@ candidate = do
                   go voteTrueSet voteFalseSet
                 GT -> do
                   lift $ writeCurrentTermAndVotedFor term Nothing
+                  timeTrace $ UpdateTermAndVotedFor term Nothing
                   voteAction peerNodeId reqVote
                   updateTimeout'
                   follower
@@ -270,6 +275,7 @@ candidate = do
                         else go voteTrueSet newVoteFalseSet
                 GT -> do
                   lift $ writeCurrentTermAndVotedFor term Nothing
+                  timeTrace $ UpdateTermAndVotedFor term Nothing
                   updateTimeout'
                   follower
             MsgAppendEntriesResult _ _ -> go voteTrueSet voteFalseSet
@@ -559,6 +565,7 @@ leader = do
                   GT -> do
                     stopDependProcessAndReplyReq $ Just (unPeerNodeId peerNodeId)
                     lift $ writeCurrentTermAndVotedFor term Nothing
+                    timeTrace $ UpdateTermAndVotedFor term Nothing
                     appendAction ranNum' peerNodeId appEnt'
                     newTimeout'
                     timeTrace LeaderToFollowerAtAP
@@ -579,6 +586,7 @@ leader = do
                   GT -> do
                     stopDependProcessAndReplyReq Nothing
                     lift $ writeCurrentTermAndVotedFor term Nothing
+                    timeTrace $ UpdateTermAndVotedFor term Nothing
                     voteAction peerNodeId reqVote
                     newTimeout'
                     timeTrace LeaderToFollowerAtRV
@@ -594,6 +602,7 @@ leader = do
                     GT -> do
                       stopDependProcessAndReplyReq $ Just (unPeerNodeId peerNodeId)
                       lift $ writeCurrentTermAndVotedFor term Nothing
+                      timeTrace $ UpdateTermAndVotedFor term Nothing
                       newTimeout'
                       follower
               MsgRequestVoteResult _ -> go
@@ -724,6 +733,7 @@ voteAction
           case voteFor of
             Nothing -> do
               lift $ writeCurrentTermAndVotedFor currentTerm (Just candidateId)
+              timeTrace $ UpdateTermAndVotedFor currentTerm (Just candidateId)
               timeTrace (VotedForNode candidateId currentTerm)
               send' (MsgRequestVoteResult (RequestVoteResult currentTerm True))
             Just canid -> do
