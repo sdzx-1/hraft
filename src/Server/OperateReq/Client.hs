@@ -1,6 +1,9 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE LambdaCase #-}
+{-# LANGUAGE RankNTypes #-}
+{-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE TypeApplications #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# OPTIONS_GHC -Wno-unticked-promoted-constructors #-}
 
@@ -13,11 +16,13 @@ import Raft.Type
 import Server.OperateReq.Type
 
 client
-  :: ( MonadSay n
+  :: ( Show req
+     , Show resp
+     , MonadSay n
      , HasLabelledLift n sig m
      )
-  => Int
-  -> Peer (Operate Int (Int, Int)) Client Idle m (Either (Maybe Id) (Int, Int))
+  => req
+  -> Peer (Operate req resp) Client Idle m (Either (Maybe Id) resp)
 client reqI = yield (SendOp reqI) $
   await $ \case
     SendResult i -> effect $ do

@@ -1,3 +1,4 @@
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DuplicateRecordFields #-}
 {-# LANGUAGE FlexibleContexts #-}
 {-# LANGUAGE NamedFieldPuns #-}
@@ -19,15 +20,13 @@ import Control.Effect.Labelled hiding (send)
 import qualified Control.Effect.Reader.Labelled as L
 import qualified Control.Effect.State.Labelled as L
 import Control.Monad
-import Control.Monad.Class.MonadFork
-import Control.Monad.Class.MonadSay
+import Control.Monad.Class.MonadFork hiding (yield)
 import Control.Monad.Class.MonadTime
 import Control.Monad.Class.MonadTimer
 import Control.Monad.IOSim (
   IOSim,
   runSimTrace,
   selectTraceEventsDynamic,
-  selectTraceEventsSay,
   traceM,
  )
 import Control.Tracer
@@ -35,7 +34,6 @@ import Data.Bifunctor (bimap)
 import qualified Data.ByteString.Lazy as LBS
 import Data.List (
   delete,
-  nub,
  )
 import qualified Data.List as L
 import Data.Map (Map)
@@ -47,14 +45,17 @@ import Data.Time (
  )
 import Deque.Strict (Deque)
 import GHC.Exts (fromList)
-import Network.TypedProtocol.Core (evalPeer, runPeer)
+import Network.TypedProtocol.Core (
+  evalPeer,
+  runPeer,
+ )
 import Raft.Handler
 import Raft.Process
 import Raft.Type
+import qualified Raft.Type as R
 import Raft.Utils
 import qualified Server.OperateReq.Client as Mini
 import qualified Server.OperateReq.Server as Mini
-import Server.OperateReq.Type
 import System.Random (mkStdGen)
 import Test.QuickCheck
 import Utils
@@ -138,7 +139,7 @@ data BaseState
 
 data NodeInfo s = NodeInfo
   { persistent :: Persistent Int (IOSim s)
-  , role :: TVar (IOSim s) Role
+  , role :: TVar (IOSim s) R.Role
   , userLogQueue :: TQueue (IOSim s) (Int, TMVar (IOSim s) (ApplyResult (Int, Int)))
   , commitIndexTVar :: CommitIndexTVar (IOSim s)
   , leaderAcceptReqList :: TVar (IOSim s) (Deque (Index, TMVar (IOSim s) (ApplyResult (Int, Int))))
@@ -188,17 +189,17 @@ tClient = do
             $ evalPeer Mini.server
         pure clientChannel
   let allNodeIds = Map.keys nodeInfoMap
-
+      call channel =
+        lift
+          . runLabelledLift
+          . runPeer channel 3
+          . evalPeer
+          . Mini.client @Int @(Int, Int)
       go i = do
         nodeId <- get
         clchannel <- startServer nodeId
         trace $ "send req: " ++ show i ++ " to Node: " ++ show nodeId
-        (_, res) <-
-          lift
-            . runLabelledLift
-            . runPeer clchannel 3
-            . evalPeer
-            $ Mini.client i
+        res <- snd <$> call clchannel i
         case res of
           Left e -> do
             trace $ "error happend: , " ++ show e ++ " retry"
@@ -224,7 +225,7 @@ tClient = do
             go i
 
   -- start client
-  forM_ [1 .. ] $ \i -> do
+  forM_ [1 ..] $ \i -> do
     go i
     lift $ threadDelay 0.1
 
