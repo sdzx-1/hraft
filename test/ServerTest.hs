@@ -37,6 +37,7 @@ import Data.List (
   delete,
   nub,
  )
+import qualified Data.List as L
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe (fromJust)
@@ -138,10 +139,10 @@ data BaseState
 data NodeInfo s = NodeInfo
   { persistent :: Persistent Int (IOSim s)
   , role :: TVar (IOSim s) Role
-  , userLogQueue :: TQueue (IOSim s) (Int, TMVar (IOSim s) (ApplyResult Int))
+  , userLogQueue :: TQueue (IOSim s) (Int, TMVar (IOSim s) (ApplyResult (Int, Int)))
   , commitIndexTVar :: CommitIndexTVar (IOSim s)
-  , leaderAcceptReqList :: TVar (IOSim s) (Deque (Index, TMVar (IOSim s) (ApplyResult Int)))
-  , needReplyOutputMap :: TVar (IOSim s) (Map Index (TMVar (IOSim s) (ApplyResult Int)))
+  , leaderAcceptReqList :: TVar (IOSim s) (Deque (Index, TMVar (IOSim s) (ApplyResult (Int, Int))))
+  , needReplyOutputMap :: TVar (IOSim s) (Map Index (TMVar (IOSim s) (ApplyResult ((Int, Int)))))
   , lastAppliedTVar :: LastAppliedTVar (IOSim s)
   , peerChannels
       :: [ ( PeerNodeId
@@ -162,8 +163,11 @@ tClient
      )
   => m ()
 tClient = do
+  nodeInfoMap <- L.ask @NodeInfoMap
+  let trace st = do
+        ct <- lift getCurrentTime
+        lift $ traceWith (Tracer (traceM . (N6 @Int))) (TimeWrapper ct (ClientReq st))
   let startServer nodeId = do
-        nodeInfoMap <- L.ask @NodeInfoMap
         let NodeInfo{role, userLogQueue} = fromJust $ Map.lookup nodeId nodeInfoMap
         connStateTVar <- lift $ newTVarIO Connected
         (serverChannel, clientChannel) <-
@@ -183,10 +187,12 @@ tClient = do
             $ runPeer serverChannel 3
             $ evalPeer Mini.server
         pure clientChannel
+  let allNodeIds = Map.keys nodeInfoMap
 
-  let go i = do
+      go i = do
         nodeId <- get
         clchannel <- startServer nodeId
+        trace $ "send req: " ++ show i ++ " to Node: " ++ show nodeId
         (_, res) <-
           lift
             . runLabelledLift
@@ -195,23 +201,30 @@ tClient = do
             $ Mini.client i
         case res of
           Left e -> do
-            lift $ say $ "error happend: , " ++ show e ++ " retry"
-            lift $ threadDelay 0.2
+            trace $ "error happend: , " ++ show e ++ " retry"
+            oldNodeId <- get @NodeId
+            let newAllNodeIds = L.delete oldNodeId allNodeIds
+            ri <- uniformR (0, length newAllNodeIds - 1)
+            put (newAllNodeIds !! ri)
             go i
-          Right Nothing -> do
-            lift $ say "finish"
+          Right (Right i') -> do
+            trace $ "finish, result: " ++ show i'
             pure ()
-          Right (Just Nothing) -> do
-            lift $ say "selecting leader "
-            lift $ threadDelay 0.2
+          Right (Left Nothing) -> do
+            trace "selecting leader "
+            lift $ threadDelay 0.1
+            oldNodeId <- get @NodeId
+            let newAllNodeIds = L.delete oldNodeId allNodeIds
+            ri <- uniformR (0, length newAllNodeIds - 1)
+            put (newAllNodeIds !! ri)
             go i
-          Right (Just (Just id')) -> do
-            lift $ say $ "connect to new leader " ++ show id'
+          Right (Left (Just id')) -> do
+            trace $ "connect to new leader " ++ show id'
             put (NodeId id')
             go i
 
   -- start client
-  forM_ [1 .. 20] $ \i -> do
+  forM_ [1 .. ] $ \i -> do
     go i
     lift $ threadDelay 0.1
 
@@ -308,7 +321,7 @@ createFollower nodeId = do
           needReplyOutputMap
           lastAppliedTVar
           0
-          (\i k -> pure (i + k, i + k))
+          (\i k -> pure (i + k, (i, k)))
 
   let tEncode = convertCborEncoder (encode @(Msg Int))
   tDecode <- lift $ convertCborDecoder (decode @(Msg Int))
@@ -532,24 +545,16 @@ runCreateAll env@Env{randomI} =
 
 selectN :: NTracer Int -> Bool
 selectN (N3 _) = True
+selectN (N4 _) = True
+selectN (N5 _) = True
+selectN (N6 _) = True
+selectN (N1 _) = False
+selectN (N2 (IdWrapper _ (TimeWrapper _ CandidateElectionSuccess{}))) = True
 selectN _ = False
-selectN1 :: NTracer Int -> Bool
-selectN1 (N3 _) = True
-selectN1 (N4 _) = True
-selectN1 (N5 _) = True
-selectN1 (N1 _) = False
-selectN1 (N2 (IdWrapper _ (TimeWrapper _ CandidateElectionSuccess{}))) = True
-selectN1 _ = False
 
-writeToFile :: [NTracer Int] -> IO ()
-writeToFile v1 = do
-  let cns = unlines . map show . filter selectN1 $ v1
-  writeFile "log" cns
-
--- runCreate :: Env -> [NTracer Int]
-runCreate :: Env -> [String]
+runCreate :: Env -> [NTracer Int]
 runCreate env@Env{randomI} =
-  selectTraceEventsSay $
+  selectTraceEventsDynamic @_ @(NTracer Int) $
     runSimTrace $
       runLabelledLift $
         runRandom (mkStdGen randomI) $
@@ -558,8 +563,8 @@ runCreate env@Env{randomI} =
 generateLogFile :: IO ()
 generateLogFile = do
   env <- generate (arbitrary :: Gen Env)
-  -- let cns = unlines . map show . filter selectN $ runCreateAll env -- [10010]
-  let cns = unlines $ runCreate env
+  let cns = unlines . map show . filter selectN $ runCreateAll env
+  -- let cns = unlines $ runCreate env
   print env
   writeFile "log" cns
 

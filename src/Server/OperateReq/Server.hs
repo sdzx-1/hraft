@@ -41,9 +41,9 @@ server = effect $ do
     SendOp i -> effect $ do
       r <- lift $ readTVarIO role
       case r of
+        Candidate -> pure $ yield (MasterChange Nothing) $ done ()
         Follower jid -> case jid of
-          Nothing -> do
-            pure $ yield (MasterChange Nothing) $ done ()
+          Nothing -> pure $ yield (MasterChange Nothing) $ done ()
           Just id' -> pure $ yield (MasterChange $ Just id') $ done ()
         Leader -> do
           tmv <- lift newEmptyTMVarIO
@@ -51,10 +51,11 @@ server = effect $ do
           resp <- lift $ atomically $ takeTMVar tmv
           case resp of
             Success resp' -> pure $ yield (SendResult resp') $ done ()
-            LeaderChange id' -> pure $ yield (MasterChange $ Just id') $ done ()
+            LeaderChange id' -> pure $ yield (MasterChange id') $ done ()
     CSendOp i -> effect $ do
       r <- lift $ readTVarIO role
       case r of
+        Candidate -> pure $ yield (CMasterChange Nothing) $ done ()
         Follower jid -> case jid of
           Nothing -> do
             pure $ yield (CMasterChange Nothing) $ done ()
@@ -65,4 +66,4 @@ server = effect $ do
           resp <- lift $ atomically $ takeTMVar tmv
           case resp of
             Success resp' -> pure $ yield (CSendResult resp') server
-            LeaderChange id' -> pure $ yield (CMasterChange $ Just id') $ done ()
+            LeaderChange id' -> pure $ yield (CMasterChange id') $ done ()

@@ -136,10 +136,11 @@ type Length = Int
 data Role
   = Leader
   | Follower (Maybe Id)
+  | Candidate
 
 data ApplyResult ouput
   = Success ouput
-  | LeaderChange Id
+  | LeaderChange (Maybe Id)
 
 data HEnv s output n = HEnv
   { nodeId :: NodeId

@@ -149,8 +149,10 @@ candidate = do
     , nodeId
     , peerInfos
     , electionTimeRange
+    , role
     } <-
     R.ask @HEnv
+  lift $ atomically $ writeTVar role Candidate
   oldTerm <- lift readCurrentTerm
   lift $ writeCurrentTermAndVotedFor (oldTerm + 1) (Just $ unNodeId nodeId)
   timeTrace (CandidateNewElectionStart (oldTerm + 1))
@@ -502,12 +504,12 @@ leader = do
           miTVars
           0
 
-  let stopDependProcessAndReplyReq id' = do
+  let stopDependProcessAndReplyReq mid = do
         lift $ atomically $ writeTQueue cmdQueue Terminate
         forM_ (Map.elems tmpPeersResultQueue) $
           \tq -> lift $ atomically (writeTQueue tq (Left Terminate))
         --------------
-        lift $ atomically $ writeTVar role (Follower $ Just id')
+        lift $ atomically $ writeTVar role (Follower mid)
         --------------
         let cleanUQ = do
               e <- lift $ atomically $ isEmptyTQueue userLogQueue
@@ -516,7 +518,7 @@ leader = do
                 else do
                   lift $ atomically $ do
                     (_, tmv) <- readTQueue userLogQueue
-                    putTMVar tmv (LeaderChange id')
+                    putTMVar tmv (LeaderChange mid)
                   cleanUQ
 
         cleanUQ
@@ -524,7 +526,7 @@ leader = do
         lAR <- lift $ readTVarIO leaderAcceptReqList
         lift $ atomically $ writeTVar leaderAcceptReqList (fromList [])
         forM_ (toList lAR) $ \(_ :: Index, tmv) -> do
-          lift $ atomically $ putTMVar tmv (LeaderChange id')
+          lift $ atomically $ putTMVar tmv (LeaderChange mid)
 
       go = do
         mMsg <-
@@ -555,7 +557,7 @@ leader = do
                     go
                   EQ -> error "undefined behave"
                   GT -> do
-                    stopDependProcessAndReplyReq (unPeerNodeId peerNodeId)
+                    stopDependProcessAndReplyReq $ Just (unPeerNodeId peerNodeId)
                     lift $ writeCurrentTermAndVotedFor term Nothing
                     appendAction ranNum' peerNodeId appEnt'
                     newTimeout'
@@ -575,7 +577,7 @@ leader = do
                       (MsgRequestVoteResult (RequestVoteResult currentTerm False))
                     go
                   GT -> do
-                    stopDependProcessAndReplyReq (unPeerNodeId peerNodeId)
+                    stopDependProcessAndReplyReq Nothing
                     lift $ writeCurrentTermAndVotedFor term Nothing
                     voteAction peerNodeId reqVote
                     newTimeout'
@@ -590,7 +592,7 @@ leader = do
                       lift $ atomically $ writeTQueue tq (Right (ranNum', apr))
                       go
                     GT -> do
-                      stopDependProcessAndReplyReq (unPeerNodeId peerNodeId)
+                      stopDependProcessAndReplyReq $ Just (unPeerNodeId peerNodeId)
                       lift $ writeCurrentTermAndVotedFor term Nothing
                       newTimeout'
                       follower

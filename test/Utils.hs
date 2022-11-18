@@ -149,11 +149,20 @@ data NodeRestart = NodeRestart UTCTime [NodeId] DiffTime
 
 instance Show NodeRestart where
   show (NodeRestart ct ids dt) =
-    "   " ++ renderUTCTime ct ++ " NodeRestart " ++ show ids ++ " " ++ show dt
+    "====================================================\n"
+      ++ "|| "
+      ++ renderUTCTime ct
+      ++ " NodeRestart "
+      ++ show ids
+      ++ " "
+      ++ show dt
 
 type CommitIndex = Int
 
 type LastAppliedIndex = Int
+
+newtype ClientReq = ClientReq String
+  deriving (Eq, Generic, NFData)
 
 data NTracer a
   = N1 (IdWrapper (IdWrapper (RecvTracer a)))
@@ -161,6 +170,7 @@ data NTracer a
   | N3 [(NodeId, CommitIndex, LastAppliedIndex, [TermWarpper Int])]
   | N4 NetworkChange
   | N5 NodeRestart
+  | N6 (TimeWrapper ClientReq)
   deriving (Eq, Generic, NFData)
 
 instance Show a => Show (NTracer a) where
@@ -184,3 +194,4 @@ instance Show a => Show (NTracer a) where
       rs
   show (N4 v) = show v
   show (N5 v) = show v
+  show (N6 (TimeWrapper ct (ClientReq st))) = "   " ++ renderUTCTime ct ++ "CR: " ++ st

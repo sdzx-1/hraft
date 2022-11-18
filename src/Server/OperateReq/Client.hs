@@ -17,11 +17,11 @@ client
      , HasLabelledLift n sig m
      )
   => Int
-  -> Peer (Operate Int Int) Client Idle m (Maybe (Maybe Id))
+  -> Peer (Operate Int (Int, Int)) Client Idle m (Either (Maybe Id) (Int, Int))
 client reqI = yield (SendOp reqI) $
   await $ \case
     SendResult i -> effect $ do
       lift $ say $ "client recv " ++ show i
       lift $ say "client done"
-      pure (done Nothing)
-    MasterChange nid -> done (Just nid)
+      pure (done (Right i))
+    MasterChange nid -> done (Left nid)
