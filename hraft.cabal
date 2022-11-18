@@ -84,6 +84,8 @@ library
 
                      , Network.TypedProtocol.Core
 
+                     , Animate.Type
+
     -- Modules included in this library but not exported.
     -- other-modules:
 
@@ -113,6 +115,7 @@ library
                     , network
                     , text
                     , deque
+                    , gloss
 
     -- Directories containing source files.
     hs-source-dirs:   src
