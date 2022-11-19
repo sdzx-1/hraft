@@ -24,9 +24,9 @@ import Test.QuickCheck (Arbitrary (arbitrary), Gen, generate)
 
 main :: IO ()
 main = do
-  env <- generate (arbitrary :: Gen Env)
-  print env
-  -- let env = tenv
+  -- env <- generate (arbitrary :: Gen Env)
+  -- print env
+  let env = tenv
   let hdls = concatMap trans $ runCreateAll env
       nodeNums = length $ nodeIds env
       nodes = mkNodes nodeNums
@@ -150,7 +150,7 @@ prodNextFrame
           )
 
 showMsg :: Show s => Msg s -> String
-showMsg (MsgAppendEntries _ (AppendEntries{term, entries})) = "AppEnd: " ++ show term ++ ", " ++ show entries
+showMsg (MsgAppendEntries _ (AppendEntries{term, prevLogIndex, entries})) = "AppEnd: " ++ show term ++ ", " ++ show prevLogIndex ++ ", " ++ show entries
 showMsg (MsgAppendEntriesResult _ AppendEntriesResult{success}) = "AppEndResult: " ++ show success
 showMsg (MsgRequestVote RequestVote{term, candidateId}) = "VoteReq: " ++ show term ++ ", " ++ show candidateId
 showMsg (MsgRequestVoteResult RequestVoteResult{voteGranted}) = "VoteReqResult: " ++ show voteGranted
