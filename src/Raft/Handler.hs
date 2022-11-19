@@ -746,6 +746,19 @@ voteAction
                   send'
                     (MsgRequestVoteResult (RequestVoteResult currentTerm False))
 
+type Sync s n =
+  ( StateC
+      RandomNumber
+      ( RandomC
+          StdGen
+          ( StateC
+              SState
+              (Labelled SEnv (ReaderC (SEnv s n)) (LabelledLift Lift n))
+          )
+      )
+  )
+    ()
+
 type S s o n =
   RandomC
     StdGen
@@ -755,6 +768,9 @@ type S s o n =
         (Labelled HState (StateC (HState s n)) (LabelledLift Lift n))
     )
     ()
+
+{-# SPECIALIZE sync:: AppendEntries s -> Sync s IO #-}
+{-# SPECIALIZE sync:: AppendEntries s -> Sync s (IOSim n) #-}
 
 {-# SPECIALIZE follower:: S s o IO #-}
 {-# SPECIALIZE follower:: S s o (IOSim n) #-}
